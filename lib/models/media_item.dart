@@ -8,7 +8,7 @@ class MediaItem {
 
   MediaItem({required this.asset, required this.isVideo, required this.title, this.createDate});
 
-  static Future<MediaItem> fromAsset(AssetEntity asset) async {
+  factory MediaItem.fromAsset(AssetEntity asset) {
     return MediaItem(
       asset: asset,
       isVideo: asset.type == AssetType.video,
@@ -26,14 +26,18 @@ class MediaItem {
   }
 
   String formatSize(int bytes) {
-    if (bytes < 1024) {
-      return '$bytes B';
-    } else if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    } else if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    const kb = 1024;
+    const mb = kb * 1024;
+    const gb = mb * 1024;
+
+    if (bytes >= gb) {
+      return '${(bytes / gb).toStringAsFixed(1)} GB';
+    } else if (bytes >= mb) {
+      return '${(bytes / mb).toStringAsFixed(1)} MB';
+    } else if (bytes >= kb) {
+      return '${(bytes / kb).toStringAsFixed(1)} KB';
     } else {
-      return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+      return '$bytes B';
     }
   }
 
@@ -44,7 +48,7 @@ class MediaItem {
         '${createDate!.year}';
   }
 
-  Future<String> get formattedDuration async {
+  String get formattedDuration {
     if (!isVideo) return '';
     final duration = asset.videoDuration;
     final minutes = duration.inMinutes;

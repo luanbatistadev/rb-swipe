@@ -140,18 +140,13 @@ class _VideoPreviewState extends State<VideoPreview> {
               children: [
                 const Icon(Icons.videocam, color: Colors.white, size: 16),
                 const SizedBox(width: 4),
-                FutureBuilder<String>(
-                  future: widget.mediaItem.formattedDuration,
-                  builder: (context, snapshot) {
-                    return Text(
-                      snapshot.data ?? '--:--',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    );
-                  },
+                Text(
+                  widget.mediaItem.formattedDuration,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ],
             ),

@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'screens/date_selection_screen.dart';
+import 'services/kept_media_service.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await KeptMediaService().init();
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -29,11 +32,11 @@ class SwipeCleanerApp extends StatelessWidget {
         useMaterial3: true,
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF0f0f1a),
-        colorScheme: ColorScheme.dark(
-          primary: const Color(0xFF6C5CE7),
-          secondary: const Color(0xFFA29BFE),
-          surface: const Color(0xFF1a1a2e),
-          error: const Color(0xFFFF4757),
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFF6C5CE7),
+          secondary: Color(0xFFA29BFE),
+          surface: Color(0xFF1a1a2e),
+          error: Color(0xFFFF4757),
         ),
         fontFamily: 'SF Pro Display',
         appBarTheme: const AppBarTheme(backgroundColor: Colors.transparent, elevation: 0),

@@ -35,19 +35,14 @@ class ThumbnailCache {
 
     _loading.add(id);
 
-    Uint8List? thumbnail;
-    int fileSize = 0;
+    final thumbnailFuture = item.isVideo
+        ? Future<Uint8List?>.value(null)
+        : item.asset.thumbnailDataWithSize(const ThumbnailSize(800, 800), quality: 90);
 
-    final futures = await Future.wait([
-      if (!item.isVideo)
-        item.asset.thumbnailDataWithSize(const ThumbnailSize(800, 800), quality: 90)
-      else
-        Future.value(null),
-      item.fileSizeAsync,
-    ]);
+    final results = await Future.wait([thumbnailFuture, item.fileSizeAsync]);
 
-    thumbnail = futures[0] as Uint8List?;
-    fileSize = futures[1] as int;
+    final thumbnail = results[0] as Uint8List?;
+    final fileSize = results[1] as int;
 
     final data = CachedMediaData(thumbnail: thumbnail, fileSize: fileSize);
     _cache[id] = data;

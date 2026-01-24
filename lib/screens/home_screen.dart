@@ -3,6 +3,7 @@ import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../models/media_item.dart';
+import '../services/kept_media_service.dart';
 import '../services/media_service.dart';
 import '../widgets/action_buttons.dart';
 import '../widgets/media_card.dart';
@@ -21,6 +22,7 @@ enum ScreenState { loading, noPermission, empty, swiping, processing, finished }
 
 class _HomeScreenState extends State<HomeScreen> {
   final MediaService _mediaService = MediaService();
+  final KeptMediaService _keptService = KeptMediaService();
 
   final ValueNotifier<ScreenState> _screenStateNotifier = ValueNotifier(ScreenState.loading);
   final ValueNotifier<int> _deletedCountNotifier = ValueNotifier(0);
@@ -30,9 +32,6 @@ class _HomeScreenState extends State<HomeScreen> {
   List<MediaItem> _mediaItems = [];
   final List<MediaItem> _itemsToDelete = [];
   String? _errorMessage;
-  int _currentPage = 0;
-  final int _pageSize = 20;
-  bool _hasMoreItems = true;
 
   GlobalKey<_MediaSwiperState> _swiperKey = GlobalKey();
 
@@ -48,8 +47,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _deletedCountNotifier.value = 0;
     _keptCountNotifier.value = 0;
     _mediaItems = [];
-    _currentPage = 0;
-    _hasMoreItems = true;
     _swiperKey = GlobalKey();
 
     final hasPermission = await _mediaService.requestPermission();
@@ -60,60 +57,40 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    if (widget.album != null) {
-      _totalCountNotifier.value = await widget.album!.assetCountAsync;
+    if (widget.selectedDate != null && widget.album != null) {
+      _mediaItems = await _mediaService.loadMediaByDate(
+        date: widget.selectedDate!,
+        album: widget.album!,
+      );
     } else {
-      _totalCountNotifier.value = await _mediaService.getTotalMediaCount();
+      _mediaItems = await _mediaService.loadAllMedia();
     }
 
-    await _loadMoreItems();
+    _totalCountNotifier.value = _mediaItems.length;
 
     if (_mediaItems.isEmpty) {
       _screenStateNotifier.value = ScreenState.empty;
     } else {
+      ThumbnailCache.preloadThumbnails(_mediaItems, 0, 5);
       _screenStateNotifier.value = ScreenState.swiping;
     }
   }
 
-  Future<void> _loadMoreItems() async {
-    if (!_hasMoreItems) return;
-
-    List<MediaItem> newItems;
-    if (widget.selectedDate != null && widget.album != null) {
-      newItems = await _mediaService.loadMediaByDate(
-        date: widget.selectedDate!,
-        album: widget.album!,
-        page: _currentPage,
-        pageSize: _pageSize,
-      );
-    } else {
-      newItems = await _mediaService.loadAllMedia(page: _currentPage, pageSize: _pageSize);
-    }
-
-    if (newItems.isEmpty) {
-      _hasMoreItems = false;
-      return;
-    }
-
-    _mediaItems.addAll(newItems);
-    _currentPage++;
-    ThumbnailCache.preloadThumbnails(_mediaItems, 0, 10);
-  }
-
   void _onSwipe(CardSwiperDirection direction, MediaItem item) {
-    if (direction == CardSwiperDirection.left) {
-      _itemsToDelete.add(item);
-      _deletedCountNotifier.value++;
-    } else if (direction == CardSwiperDirection.right) {
-      _keptCountNotifier.value++;
+    switch (direction) {
+      case CardSwiperDirection.left:
+        _itemsToDelete.add(item);
+        _deletedCountNotifier.value++;
+      case CardSwiperDirection.right:
+        _keptService.addKept(item.asset.id);
+        _keptCountNotifier.value++;
+      case _:
+        break;
     }
   }
 
   void _onNeedMoreItems(int currentIndex) {
     ThumbnailCache.preloadThumbnails(_mediaItems, currentIndex, 5);
-    if (_mediaItems.length - currentIndex < 5 && _hasMoreItems) {
-      _loadMoreItems();
-    }
   }
 
   Future<void> _onFinished() async {
@@ -230,24 +207,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _getTitle() {
-    if (widget.selectedDate != null) {
-      final months = [
-        'Janeiro',
-        'Fevereiro',
-        'Março',
-        'Abril',
-        'Maio',
-        'Junho',
-        'Julho',
-        'Agosto',
-        'Setembro',
-        'Outubro',
-        'Novembro',
-        'Dezembro',
-      ];
-      return '${months[widget.selectedDate!.month - 1]} / ${widget.selectedDate!.year}';
-    }
-    return 'Swipe Cleaner';
+    if (widget.selectedDate == null) return 'Swipe Cleaner';
+    return '${fullMonthNames[widget.selectedDate!.month - 1]} / ${widget.selectedDate!.year}';
   }
 }
 
@@ -332,7 +293,7 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         children: [
           Row(
@@ -352,10 +313,9 @@ class _Header extends StatelessWidget {
                   ValueListenableBuilder<int>(
                     valueListenable: totalCountNotifier,
                     builder: (context, totalCount, _) {
+                      final text = totalCount > 0 ? '$totalCount arquivos total' : 'Galeria';
                       return Text(
-                        totalCount > 0
-                            ? '$totalCount arquivos total'
-                            : 'Galeria', // Simplificado pois totalCount pode ser do album todo
+                        text,
                         style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
                       );
                     },
@@ -524,20 +484,18 @@ class _FinishedScreen extends StatelessWidget {
               style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            ValueListenableBuilder<int>(
-              valueListenable: deletedCountNotifier,
-              builder: (context, deletedCount, _) {
-                return ValueListenableBuilder<int>(
-                  valueListenable: keptCountNotifier,
-                  builder: (context, keptCount, _) {
-                    return Text(
-                      deletedCount > 0
-                          ? '$deletedCount arquivos apagados\n$keptCount arquivos mantidos'
-                          : 'Você não tem mais fotos ou vídeos.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 16),
-                    );
-                  },
+            ListenableBuilder(
+              listenable: Listenable.merge([deletedCountNotifier, keptCountNotifier]),
+              builder: (context, _) {
+                final deletedCount = deletedCountNotifier.value;
+                final keptCount = keptCountNotifier.value;
+                final message = deletedCount > 0
+                    ? '$deletedCount arquivos apagados\n$keptCount arquivos mantidos'
+                    : 'Você não tem mais fotos ou vídeos.';
+                return Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 16),
                 );
               },
             ),
