@@ -3,12 +3,16 @@ import 'package:flutter/material.dart';
 class ActionButtons extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onKeep;
+  final VoidCallback? onUndo;
+  final bool canUndo;
   final bool isLoading;
 
   const ActionButtons({
     super.key,
     required this.onDelete,
     required this.onKeep,
+    this.onUndo,
+    this.canUndo = false,
     this.isLoading = false,
   });
 
@@ -17,7 +21,7 @@ class ActionButtons extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _ActionButton(
             onTap: isLoading ? null : onDelete,
@@ -26,6 +30,10 @@ class ActionButtons extends StatelessWidget {
             primaryColor: const Color(0xFFFF4757),
             secondaryColor: const Color(0xFFFF6B81),
             isLoading: isLoading,
+          ),
+          _UndoButton(
+            onTap: canUndo && !isLoading ? onUndo : null,
+            enabled: canUndo && !isLoading,
           ),
           _ActionButton(
             onTap: isLoading ? null : onKeep,
@@ -36,6 +44,44 @@ class ActionButtons extends StatelessWidget {
             isLoading: isLoading,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _UndoButton extends StatelessWidget {
+  final VoidCallback? onTap;
+  final bool enabled;
+
+  const _UndoButton({required this.onTap, required this.enabled});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedOpacity(
+        opacity: enabled ? 1.0 : 0.3,
+        duration: const Duration(milliseconds: 200),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.1),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 2),
+              ),
+              child: const Icon(Icons.undo, color: Colors.white70, size: 24),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Voltar',
+              style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
       ),
     );
   }

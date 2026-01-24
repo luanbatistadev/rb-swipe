@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/media_service.dart';
+import 'duplicates_screen.dart';
 import 'home_screen.dart';
 
 class DateSelectionScreen extends StatefulWidget {
@@ -47,6 +48,13 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
     _loadGroups();
   }
 
+  void _openDuplicates() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const DuplicatesScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -58,6 +66,13 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.content_copy, color: Colors.white),
+            tooltip: 'Fotos Duplicadas',
+            onPressed: _openDuplicates,
+          ),
+        ],
       ),
       body: _buildContent(),
     );

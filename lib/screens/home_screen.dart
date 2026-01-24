@@ -8,6 +8,13 @@ import '../services/media_service.dart';
 import '../widgets/action_buttons.dart';
 import '../widgets/media_card.dart';
 
+class _SwipeAction {
+  final MediaItem item;
+  final CardSwiperDirection direction;
+
+  _SwipeAction(this.item, this.direction);
+}
+
 class HomeScreen extends StatefulWidget {
   final DateTime? selectedDate;
   final AssetPathEntity? album;
@@ -28,9 +35,11 @@ class _HomeScreenState extends State<HomeScreen> {
   final ValueNotifier<int> _deletedCountNotifier = ValueNotifier(0);
   final ValueNotifier<int> _keptCountNotifier = ValueNotifier(0);
   final ValueNotifier<int> _totalCountNotifier = ValueNotifier(0);
+  final ValueNotifier<bool> _canUndoNotifier = ValueNotifier(false);
 
   List<MediaItem> _mediaItems = [];
   final List<MediaItem> _itemsToDelete = [];
+  final List<_SwipeAction> _swipeHistory = [];
   String? _errorMessage;
 
   GlobalKey<_MediaSwiperState> _swiperKey = GlobalKey();
@@ -44,8 +53,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _initialize() async {
     _screenStateNotifier.value = ScreenState.loading;
     _itemsToDelete.clear();
+    _swipeHistory.clear();
     _deletedCountNotifier.value = 0;
     _keptCountNotifier.value = 0;
+    _canUndoNotifier.value = false;
     _mediaItems = [];
     _swiperKey = GlobalKey();
 
@@ -77,6 +88,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onSwipe(CardSwiperDirection direction, MediaItem item) {
+    _swipeHistory.add(_SwipeAction(item, direction));
+    _canUndoNotifier.value = true;
+
     switch (direction) {
       case CardSwiperDirection.left:
         _itemsToDelete.add(item);
@@ -87,6 +101,25 @@ class _HomeScreenState extends State<HomeScreen> {
       case _:
         break;
     }
+  }
+
+  void _onUndo(CardSwiperDirection direction, MediaItem item) {
+    switch (direction) {
+      case CardSwiperDirection.left:
+        _itemsToDelete.remove(item);
+        _deletedCountNotifier.value--;
+      case CardSwiperDirection.right:
+        _keptService.removeKept(item.asset.id);
+        _keptCountNotifier.value--;
+      case _:
+        break;
+    }
+    if (_swipeHistory.isNotEmpty) _swipeHistory.removeLast();
+    _canUndoNotifier.value = _swipeHistory.isNotEmpty;
+  }
+
+  void _onUndoPressed() {
+    _swiperKey.currentState?.undo();
   }
 
   void _onNeedMoreItems(int currentIndex) {
@@ -129,6 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _deletedCountNotifier.dispose();
     _keptCountNotifier.dispose();
     _totalCountNotifier.dispose();
+    _canUndoNotifier.dispose();
     super.dispose();
   }
 
@@ -177,6 +211,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         key: _swiperKey,
                         mediaItems: _mediaItems,
                         onSwipe: _onSwipe,
+                        onUndo: _onUndo,
                         onNeedMoreItems: _onNeedMoreItems,
                         onFinished: _onFinished,
                       );
@@ -190,10 +225,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (state == ScreenState.swiping) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 40),
-                    child: ActionButtons(
-                      onDelete: _onDeletePressed,
-                      onKeep: _onKeepPressed,
-                      isLoading: false,
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: _canUndoNotifier,
+                      builder: (context, canUndo, _) {
+                        return ActionButtons(
+                          onDelete: _onDeletePressed,
+                          onKeep: _onKeepPressed,
+                          onUndo: _onUndoPressed,
+                          canUndo: canUndo,
+                          isLoading: false,
+                        );
+                      },
                     ),
                   );
                 }
@@ -215,6 +257,7 @@ class _HomeScreenState extends State<HomeScreen> {
 class _MediaSwiper extends StatefulWidget {
   final List<MediaItem> mediaItems;
   final void Function(CardSwiperDirection direction, MediaItem item) onSwipe;
+  final void Function(CardSwiperDirection direction, MediaItem item) onUndo;
   final void Function(int currentIndex) onNeedMoreItems;
   final VoidCallback onFinished;
 
@@ -222,6 +265,7 @@ class _MediaSwiper extends StatefulWidget {
     super.key,
     required this.mediaItems,
     required this.onSwipe,
+    required this.onUndo,
     required this.onNeedMoreItems,
     required this.onFinished,
   });
@@ -235,6 +279,7 @@ class _MediaSwiperState extends State<_MediaSwiper> {
 
   void swipeLeft() => _controller.swipe(CardSwiperDirection.left);
   void swipeRight() => _controller.swipe(CardSwiperDirection.right);
+  void undo() => _controller.undo();
 
   @override
   void dispose() {
@@ -264,7 +309,12 @@ class _MediaSwiperState extends State<_MediaSwiper> {
           }
           return true;
         },
-        onUndo: (previousIndex, currentIndex, direction) => false,
+        onUndo: (previousIndex, currentIndex, direction) {
+          if (currentIndex < widget.mediaItems.length) {
+            widget.onUndo(direction, widget.mediaItems[currentIndex]);
+          }
+          return true;
+        },
         onEnd: widget.onFinished,
         cardBuilder: (context, index, horizontalThreshold, verticalThreshold) {
           if (index >= widget.mediaItems.length) {
