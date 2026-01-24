@@ -5,34 +5,34 @@ import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../models/media_item.dart';
-import '../services/duplicate_detector_service.dart';
 import '../services/media_service.dart';
+import '../services/screenshot_detector_service.dart';
 
 const _backgroundColor = Color(0xFF0f0f1a);
 const _cardColor = Color(0xFF1a1a2e);
-const _accentColor = Color(0xFF6C5CE7);
+const _accentColor = Color(0xFFFF9F43);
 const _deleteColor = Color(0xFFFF4757);
 const _successColor = Color(0xFF2ED573);
 
-class DuplicatesScreen extends StatefulWidget {
-  const DuplicatesScreen({super.key});
+class ScreenshotsScreen extends StatefulWidget {
+  const ScreenshotsScreen({super.key});
 
   @override
-  State<DuplicatesScreen> createState() => _DuplicatesScreenState();
+  State<ScreenshotsScreen> createState() => _ScreenshotsScreenState();
 }
 
-class _DuplicatesScreenState extends State<DuplicatesScreen> {
-  final DuplicateDetectorService _detector = DuplicateDetectorService();
+class _ScreenshotsScreenState extends State<ScreenshotsScreen> {
+  final ScreenshotDetectorService _detector = ScreenshotDetectorService();
   final MediaService _mediaService = MediaService();
 
   bool _isScanning = true;
   bool _isDeleting = false;
-  List<DuplicateGroup> _groups = [];
+  Map<ScreenshotAge, ScreenshotGroup> _groups = {};
   final Set<String> _selectedToDelete = {};
   int _progress = 0;
   int _total = 0;
   String? _error;
-  StreamSubscription<DuplicateScanProgress>? _subscription;
+  StreamSubscription<ScreenshotScanProgress>? _subscription;
 
   @override
   void initState() {
@@ -54,24 +54,19 @@ class _DuplicatesScreenState extends State<DuplicatesScreen> {
       _isDeleting = false;
       _progress = 0;
       _total = 0;
-      _groups = [];
+      _groups = {};
       _selectedToDelete.clear();
       _error = null;
     });
 
-    _subscription = _detector.detectDuplicatesStream().listen(
+    _subscription = _detector.detectScreenshotsStream().listen(
       (event) {
         if (!mounted) return;
 
         setState(() {
           _progress = event.current;
           _total = event.total;
-
-          if (event.newGroup != null) {
-            _groups.add(event.newGroup!);
-            // Sort by potential savings
-            _groups.sort((a, b) => b.potentialSavings.compareTo(a.potentialSavings));
-          }
+          _groups = event.groups;
 
           if (event.isComplete) {
             _isScanning = false;
@@ -92,6 +87,13 @@ class _DuplicatesScreenState extends State<DuplicatesScreen> {
     );
   }
 
+  List<ScreenshotGroup> get _sortedGroups {
+    // Sort by age (oldest first for cleanup)
+    final sorted = _groups.values.toList();
+    sorted.sort((a, b) => b.age.index.compareTo(a.age.index));
+    return sorted;
+  }
+
   void _toggleSelection(MediaItem item) {
     setState(() {
       if (_selectedToDelete.contains(item.asset.id)) {
@@ -102,10 +104,18 @@ class _DuplicatesScreenState extends State<DuplicatesScreen> {
     });
   }
 
-  void _selectAllExceptFirst(DuplicateGroup group) {
+  void _selectAllInGroup(ScreenshotGroup group) {
     setState(() {
-      for (var i = 1; i < group.items.length; i++) {
-        _selectedToDelete.add(group.items[i].asset.id);
+      for (final item in group.items) {
+        _selectedToDelete.add(item.asset.id);
+      }
+    });
+  }
+
+  void _deselectAllInGroup(ScreenshotGroup group) {
+    setState(() {
+      for (final item in group.items) {
+        _selectedToDelete.remove(item.asset.id);
       }
     });
   }
@@ -116,7 +126,7 @@ class _DuplicatesScreenState extends State<DuplicatesScreen> {
     setState(() => _isDeleting = true);
 
     final toDelete = <MediaItem>[];
-    for (final group in _groups) {
+    for (final group in _groups.values) {
       for (final item in group.items) {
         if (_selectedToDelete.contains(item.asset.id)) {
           toDelete.add(item);
@@ -129,7 +139,7 @@ class _DuplicatesScreenState extends State<DuplicatesScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('$deleted arquivos apagados'),
+          content: Text('$deleted screenshots apagados'),
           backgroundColor: _successColor,
         ),
       );
@@ -149,7 +159,7 @@ class _DuplicatesScreenState extends State<DuplicatesScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          'Fotos Duplicadas',
+          'Screenshots Antigos',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         actions: [
@@ -182,11 +192,12 @@ class _DuplicatesScreenState extends State<DuplicatesScreen> {
     }
 
     // Show list with groups (even while scanning)
-    return _DuplicatesList(
-      groups: _groups,
+    return _ScreenshotsList(
+      groups: _sortedGroups,
       selectedToDelete: _selectedToDelete,
       onToggleSelection: _toggleSelection,
-      onSelectAllExceptFirst: _selectAllExceptFirst,
+      onSelectAll: _selectAllInGroup,
+      onDeselectAll: _deselectAllInGroup,
       isScanning: _isScanning,
       progress: _progress,
       total: _total,
@@ -209,7 +220,7 @@ class _ErrorWidget extends StatelessWidget {
           Icon(Icons.error_outline, size: 80, color: Colors.white.withValues(alpha: 0.3)),
           const SizedBox(height: 24),
           const Text(
-            'Erro ao analisar fotos',
+            'Erro ao procurar screenshots',
             style: TextStyle(color: Colors.white, fontSize: 18),
           ),
           const SizedBox(height: 8),
@@ -242,15 +253,15 @@ class _EmptyWidget extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.check_circle_outline, size: 80, color: Colors.white.withValues(alpha: 0.3)),
+          Icon(Icons.screenshot, size: 80, color: Colors.white.withValues(alpha: 0.3)),
           const SizedBox(height: 24),
           const Text(
-            'Nenhuma duplicata encontrada',
+            'Nenhum screenshot encontrado',
             style: TextStyle(color: Colors.white, fontSize: 18),
           ),
           const SizedBox(height: 8),
           Text(
-            'Suas fotos estão organizadas!',
+            'Sua galeria está limpa!',
             style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
           ),
         ],
@@ -268,29 +279,31 @@ class _DeletingWidget extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(color: Colors.white),
+          CircularProgressIndicator(color: _accentColor),
           SizedBox(height: 24),
-          Text('Apagando arquivos...', style: TextStyle(color: Colors.white)),
+          Text('Apagando screenshots...', style: TextStyle(color: Colors.white)),
         ],
       ),
     );
   }
 }
 
-class _DuplicatesList extends StatelessWidget {
-  final List<DuplicateGroup> groups;
+class _ScreenshotsList extends StatelessWidget {
+  final List<ScreenshotGroup> groups;
   final Set<String> selectedToDelete;
   final void Function(MediaItem) onToggleSelection;
-  final void Function(DuplicateGroup) onSelectAllExceptFirst;
+  final void Function(ScreenshotGroup) onSelectAll;
+  final void Function(ScreenshotGroup) onDeselectAll;
   final bool isScanning;
   final int progress;
   final int total;
 
-  const _DuplicatesList({
+  const _ScreenshotsList({
     required this.groups,
     required this.selectedToDelete,
     required this.onToggleSelection,
-    required this.onSelectAllExceptFirst,
+    required this.onSelectAll,
+    required this.onDeselectAll,
     required this.isScanning,
     required this.progress,
     required this.total,
@@ -314,20 +327,20 @@ class _DuplicatesList extends StatelessWidget {
           return _ScanningIndicator(progress: progress, total: total);
         }
 
-        return _DuplicateGroupCard(
+        return _ScreenshotGroupCard(
           group: groups[index - 1],
-          groupIndex: index,
           selectedToDelete: selectedToDelete,
           onToggleSelection: onToggleSelection,
-          onSelectAllExceptFirst: onSelectAllExceptFirst,
+          onSelectAll: onSelectAll,
+          onDeselectAll: onDeselectAll,
         );
       },
     );
   }
 
   Widget _buildSummary() {
-    final totalDuplicates = groups.fold<int>(0, (sum, g) => sum + g.items.length - 1);
-    final totalSavings = groups.fold<int>(0, (sum, g) => sum + g.potentialSavings);
+    final totalScreenshots = groups.fold<int>(0, (sum, g) => sum + g.items.length);
+    final totalSize = groups.fold<int>(0, (sum, g) => sum + g.totalSize);
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
@@ -340,19 +353,19 @@ class _DuplicatesList extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _SummaryItem(
-            icon: Icons.photo_library,
-            value: '${groups.length}${isScanning ? '+' : ''}',
-            label: 'grupos',
+            icon: Icons.screenshot,
+            value: '$totalScreenshots${isScanning ? '+' : ''}',
+            label: 'screenshots',
           ),
           _SummaryItem(
-            icon: Icons.content_copy,
-            value: '$totalDuplicates${isScanning ? '+' : ''}',
-            label: 'duplicatas',
+            icon: Icons.folder,
+            value: '${groups.length}${isScanning ? '+' : ''}',
+            label: 'períodos',
           ),
           _SummaryItem(
             icon: Icons.storage,
-            value: _formatSize(totalSavings),
-            label: 'economia',
+            value: _formatSize(totalSize),
+            label: 'total',
           ),
         ],
       ),
@@ -397,7 +410,7 @@ class _ScanningIndicator extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Procurando mais duplicatas...',
+                  'Procurando mais screenshots...',
                   style: TextStyle(color: Colors.white, fontSize: 14),
                 ),
                 const SizedBox(height: 4),
@@ -434,20 +447,22 @@ class _SummaryItem extends StatelessWidget {
   }
 }
 
-class _DuplicateGroupCard extends StatelessWidget {
-  final DuplicateGroup group;
-  final int groupIndex;
+class _ScreenshotGroupCard extends StatelessWidget {
+  final ScreenshotGroup group;
   final Set<String> selectedToDelete;
   final void Function(MediaItem) onToggleSelection;
-  final void Function(DuplicateGroup) onSelectAllExceptFirst;
+  final void Function(ScreenshotGroup) onSelectAll;
+  final void Function(ScreenshotGroup) onDeselectAll;
 
-  const _DuplicateGroupCard({
+  const _ScreenshotGroupCard({
     required this.group,
-    required this.groupIndex,
     required this.selectedToDelete,
     required this.onToggleSelection,
-    required this.onSelectAllExceptFirst,
+    required this.onSelectAll,
+    required this.onDeselectAll,
   });
+
+  bool get _allSelected => group.items.isNotEmpty && group.items.every((i) => selectedToDelete.contains(i.asset.id));
 
   @override
   Widget build(BuildContext context) {
@@ -465,13 +480,26 @@ class _DuplicateGroupCard extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Grupo $groupIndex',
-                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      group.label,
+                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${group.items.length} screenshots',
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
+                    ),
+                  ],
                 ),
                 TextButton(
-                  onPressed: () => onSelectAllExceptFirst(group),
-                  child: const Text('Manter apenas 1', style: TextStyle(color: _accentColor)),
+                  onPressed: () => _allSelected ? onDeselectAll(group) : onSelectAll(group),
+                  child: Text(
+                    _allSelected ? 'Desmarcar todos' : 'Selecionar todos',
+                    style: const TextStyle(color: _accentColor),
+                  ),
                 ),
               ],
             ),
@@ -485,10 +513,9 @@ class _DuplicateGroupCard extends StatelessWidget {
               itemBuilder: (context, index) {
                 final item = group.items[index];
                 final isSelected = selectedToDelete.contains(item.asset.id);
-                return _DuplicateThumb(
+                return _ScreenshotThumb(
                   item: item,
                   isSelected: isSelected,
-                  isFirst: index == 0,
                   onTap: () => onToggleSelection(item),
                 );
               },
@@ -501,24 +528,22 @@ class _DuplicateGroupCard extends StatelessWidget {
   }
 }
 
-class _DuplicateThumb extends StatefulWidget {
+class _ScreenshotThumb extends StatefulWidget {
   final MediaItem item;
   final bool isSelected;
-  final bool isFirst;
   final VoidCallback onTap;
 
-  const _DuplicateThumb({
+  const _ScreenshotThumb({
     required this.item,
     required this.isSelected,
-    required this.isFirst,
     required this.onTap,
   });
 
   @override
-  State<_DuplicateThumb> createState() => _DuplicateThumbState();
+  State<_ScreenshotThumb> createState() => _ScreenshotThumbState();
 }
 
-class _DuplicateThumbState extends State<_DuplicateThumb> {
+class _ScreenshotThumbState extends State<_ScreenshotThumb> {
   Uint8List? _thumbnail;
 
   @override
@@ -543,7 +568,7 @@ class _DuplicateThumbState extends State<_DuplicateThumb> {
     return GestureDetector(
       onTap: widget.onTap,
       child: Container(
-        width: 100,
+        width: 80,
         margin: const EdgeInsets.symmetric(horizontal: 4),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
@@ -571,23 +596,7 @@ class _DuplicateThumbState extends State<_DuplicateThumb> {
                   color: _deleteColor.withValues(alpha: 0.4),
                 ),
                 child: const Center(
-                  child: Icon(Icons.delete, color: Colors.white, size: 32),
-                ),
-              ),
-            if (widget.isFirst)
-              Positioned(
-                top: 4,
-                left: 4,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: _successColor,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    'Original',
-                    style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                  ),
+                  child: Icon(Icons.check_circle, color: Colors.white, size: 28),
                 ),
               ),
           ],
