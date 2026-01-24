@@ -6,9 +6,6 @@ import 'package:photo_manager/photo_manager.dart';
 import '../models/media_item.dart';
 import 'kept_media_service.dart';
 
-const _maxAssetsToScan = 5000;
-const _batchSize = 30;
-
 const _daysInWeek = 7;
 const _daysInMonth = 30;
 const _daysIn3Months = 90;
@@ -25,9 +22,8 @@ enum ScreenshotAge {
 class ScreenshotGroup {
   final ScreenshotAge age;
   final List<MediaItem> items;
-  int totalSize;
 
-  ScreenshotGroup({required this.age, required this.items, this.totalSize = 0});
+  ScreenshotGroup({required this.age, required this.items});
 
   String get label {
     switch (age) {
@@ -64,24 +60,33 @@ class ScreenshotScanProgress {
 class ScreenshotDetectorService {
   final KeptMediaService _keptService = KeptMediaService();
 
+  /// Detect screenshots - prioritizes Screenshots album for speed
   Stream<ScreenshotScanProgress> detectScreenshotsStream() async* {
     final groups = <ScreenshotAge, ScreenshotGroup>{};
 
     try {
-      final albums = await PhotoManager.getAssetPathList(type: RequestType.image, hasAll: true);
+      yield ScreenshotScanProgress(current: 0, total: 0, groups: groups);
+
+      // Get all albums
+      final albums = await PhotoManager.getAssetPathList(
+        type: RequestType.image,
+        hasAll: true,
+      );
+
       if (albums.isEmpty) {
         yield ScreenshotScanProgress(current: 0, total: 0, groups: groups, isComplete: true);
         return;
       }
 
-      final allPhotos = albums.first;
-      final assets = await allPhotos.getAssetListRange(start: 0, end: _maxAssetsToScan);
-
-      // Filter kept assets first
-      final filtered = assets.where((a) => !_keptService.isKept(a.id)).toList();
-      final total = filtered.length;
-
-      yield ScreenshotScanProgress(current: 0, total: total, groups: groups);
+      // Try to find Screenshots album directly (MUCH faster)
+      AssetPathEntity? screenshotAlbum;
+      for (final album in albums) {
+        final name = album.name.toLowerCase();
+        if (name == 'screenshots' || name == 'capturas de tela' || name == 'capturas') {
+          screenshotAlbum = album;
+          break;
+        }
+      }
 
       final now = DateTime.now();
       final oneWeekAgo = now.subtract(const Duration(days: _daysInWeek));
@@ -89,88 +94,80 @@ class ScreenshotDetectorService {
       final threeMonthsAgo = now.subtract(const Duration(days: _daysIn3Months));
       final sixMonthsAgo = now.subtract(const Duration(days: _daysIn6Months));
 
-      // Process in batches
-      for (var i = 0; i < filtered.length; i += _batchSize) {
-        final batchEnd = (i + _batchSize).clamp(0, filtered.length);
-        final batch = filtered.sublist(i, batchEnd);
+      if (screenshotAlbum != null) {
+        // Fast path: load from Screenshots album in batches
+        final count = await screenshotAlbum.assetCountAsync;
+        yield ScreenshotScanProgress(current: 0, total: count, groups: groups);
 
-        for (var j = 0; j < batch.length; j++) {
-          final asset = batch[j];
+        // Load in batches and yield progressively
+        const batchSize = 100;
+        for (var start = 0; start < count; start += batchSize) {
+          final end = (start + batchSize).clamp(0, count);
+          final assets = await screenshotAlbum.getAssetListRange(start: start, end: end);
 
-          try {
-            bool isScreenshot = false;
+          for (final asset in assets) {
+            if (_keptService.isKept(asset.id)) continue;
 
-            // Quick check by title first (no I/O)
-            if (_isScreenshotByTitle(asset.title)) {
-              isScreenshot = true;
-            } else {
-              // Slower check by path with timeout
-              final file = await asset.file.timeout(
-                const Duration(seconds: 3),
-                onTimeout: () => null,
-              );
-              if (file != null && _isScreenshotByPath(file.path)) {
-                isScreenshot = true;
-              }
-            }
-
-            if (isScreenshot) {
-              // Determine age group
-              final date = asset.createDateTime;
-              ScreenshotAge age;
-
-              if (date.isAfter(oneWeekAgo)) {
-                age = ScreenshotAge.lastWeek;
-              } else if (date.isAfter(oneMonthAgo)) {
-                age = ScreenshotAge.lastMonth;
-              } else if (date.isAfter(threeMonthsAgo)) {
-                age = ScreenshotAge.last3Months;
-              } else if (date.isAfter(sixMonthsAgo)) {
-                age = ScreenshotAge.last6Months;
-              } else {
-                age = ScreenshotAge.olderThan6Months;
-              }
-
-              // Add to group
-              if (!groups.containsKey(age)) {
-                groups[age] = ScreenshotGroup(age: age, items: []);
-              }
-              groups[age]!.items.add(MediaItem.fromAsset(asset));
-
-              // Get file size asynchronously with timeout
-              try {
-                final size = await MediaItem.fromAsset(asset).fileSizeAsync.timeout(
-                      const Duration(seconds: 2),
-                      onTimeout: () => 0,
-                    );
-                groups[age]!.totalSize += size;
-              } catch (_) {
-                // Ignore size errors
-              }
-            }
-          } catch (e) {
-            debugPrint('Error processing asset: $e');
+            final age = _determineAge(asset.createDateTime, now, oneWeekAgo, oneMonthAgo, threeMonthsAgo, sixMonthsAgo);
+            groups.putIfAbsent(age, () => ScreenshotGroup(age: age, items: []));
+            groups[age]!.items.add(MediaItem.fromAsset(asset));
           }
+
+          // Yield after each batch to show progress
+          yield ScreenshotScanProgress(
+            current: end,
+            total: count,
+            groups: Map.from(groups),
+          );
         }
 
-        // Emit progress after each batch
         yield ScreenshotScanProgress(
-          current: i + batch.length,
-          total: total,
-          groups: Map.from(groups),
+          current: count,
+          total: count,
+          groups: groups,
+          isComplete: true,
         );
+      } else {
+        // Fallback: scan recent photos in batches
+        final allPhotos = albums.first;
+        final totalCount = await allPhotos.assetCountAsync;
+        final scanCount = totalCount.clamp(0, 500);
 
-        // Yield to UI
-        await Future.delayed(Duration.zero);
+        yield ScreenshotScanProgress(current: 0, total: scanCount, groups: groups);
+
+        // Load in batches and yield progressively
+        const batchSize = 100;
+        for (var start = 0; start < scanCount; start += batchSize) {
+          final end = (start + batchSize).clamp(0, scanCount);
+          final assets = await allPhotos.getAssetListRange(start: start, end: end);
+
+          for (final asset in assets) {
+            if (_keptService.isKept(asset.id)) continue;
+
+            if (_isScreenshotByTitle(asset.title)) {
+              final age = _determineAge(asset.createDateTime, now, oneWeekAgo, oneMonthAgo, threeMonthsAgo, sixMonthsAgo);
+              groups.putIfAbsent(age, () => ScreenshotGroup(age: age, items: []));
+              groups[age]!.items.add(MediaItem.fromAsset(asset));
+            }
+          }
+
+          // Yield after each batch to show progress
+          yield ScreenshotScanProgress(
+            current: end,
+            total: scanCount,
+            groups: Map.from(groups),
+          );
+        }
+
+        yield ScreenshotScanProgress(
+          current: scanCount,
+          total: scanCount,
+          groups: groups,
+          isComplete: true,
+        );
       }
-
-      yield ScreenshotScanProgress(
-        current: total,
-        total: total,
-        groups: groups,
-        isComplete: true,
-      );
     } catch (e) {
+      debugPrint('Screenshot scan error: $e');
       yield ScreenshotScanProgress(
         current: 0,
         total: 0,
@@ -181,18 +178,28 @@ class ScreenshotDetectorService {
     }
   }
 
+  ScreenshotAge _determineAge(
+    DateTime date,
+    DateTime now,
+    DateTime oneWeekAgo,
+    DateTime oneMonthAgo,
+    DateTime threeMonthsAgo,
+    DateTime sixMonthsAgo,
+  ) {
+    if (date.isAfter(oneWeekAgo)) return ScreenshotAge.lastWeek;
+    if (date.isAfter(oneMonthAgo)) return ScreenshotAge.lastMonth;
+    if (date.isAfter(threeMonthsAgo)) return ScreenshotAge.last3Months;
+    if (date.isAfter(sixMonthsAgo)) return ScreenshotAge.last6Months;
+    return ScreenshotAge.olderThan6Months;
+  }
+
   bool _isScreenshotByTitle(String? title) {
     if (title == null) return false;
     final lower = title.toLowerCase();
     return lower.startsWith('screenshot') ||
         lower.startsWith('captura') ||
-        lower.contains('screenshot');
-  }
-
-  bool _isScreenshotByPath(String path) {
-    final lower = path.toLowerCase();
-    return lower.contains('screenshot') ||
-        lower.contains('capturas') ||
-        lower.contains('screen');
+        lower.contains('screenshot') ||
+        lower.contains('screen_') ||
+        lower.contains('screen-');
   }
 }

@@ -340,7 +340,6 @@ class _ScreenshotsList extends StatelessWidget {
 
   Widget _buildSummary() {
     final totalScreenshots = groups.fold<int>(0, (sum, g) => sum + g.items.length);
-    final totalSize = groups.fold<int>(0, (sum, g) => sum + g.totalSize);
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
@@ -362,22 +361,9 @@ class _ScreenshotsList extends StatelessWidget {
             value: '${groups.length}${isScanning ? '+' : ''}',
             label: 'períodos',
           ),
-          _SummaryItem(
-            icon: Icons.storage,
-            value: _formatSize(totalSize),
-            label: 'total',
-          ),
         ],
       ),
     );
-  }
-
-  String _formatSize(int bytes) {
-    const mb = 1024 * 1024;
-    const gb = mb * 1024;
-    if (bytes >= gb) return '${(bytes / gb).toStringAsFixed(1)} GB';
-    if (bytes >= mb) return '${(bytes / mb).toStringAsFixed(1)} MB';
-    return '${(bytes / 1024).toStringAsFixed(1)} KB';
   }
 }
 
