@@ -8,6 +8,8 @@ import '../services/media_service.dart';
 import '../widgets/action_buttons.dart';
 import '../widgets/media_card.dart';
 
+const _deleteBatchSize = 20;
+
 class _SwipeAction {
   final MediaItem item;
   final CardSwiperDirection direction;
@@ -40,7 +42,9 @@ class _HomeScreenState extends State<HomeScreen> {
   List<MediaItem> _mediaItems = [];
   final List<MediaItem> _itemsToDelete = [];
   final List<_SwipeAction> _swipeHistory = [];
+  final Map<String, int> _fileSizeCache = {};
   String? _errorMessage;
+  bool _isShowingBatchDialog = false;
 
   GlobalKey<_MediaSwiperState> _swiperKey = GlobalKey();
 
@@ -95,11 +99,75 @@ class _HomeScreenState extends State<HomeScreen> {
       case CardSwiperDirection.left:
         _itemsToDelete.add(item);
         _deletedCountNotifier.value++;
+        _cacheFileSize(item);
+        _checkBatchDelete();
       case CardSwiperDirection.right:
         _keptService.addKept(item.asset.id);
         _keptCountNotifier.value++;
       case _:
         break;
+    }
+  }
+
+  Future<void> _cacheFileSize(MediaItem item) async {
+    if (_fileSizeCache.containsKey(item.asset.id)) return;
+    final size = await item.fileSizeAsync;
+    _fileSizeCache[item.asset.id] = size;
+  }
+
+  void _checkBatchDelete() {
+    if (_isShowingBatchDialog) return;
+    if (_itemsToDelete.length % _deleteBatchSize != 0) return;
+    if (_itemsToDelete.isEmpty) return;
+
+    _isShowingBatchDialog = true;
+    _showBatchDeleteDialog();
+  }
+
+  Future<void> _showBatchDeleteDialog() async {
+    int totalSize = 0;
+    for (final item in _itemsToDelete) {
+      totalSize += _fileSizeCache[item.asset.id] ?? 0;
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _BatchDeleteDialog(
+        count: _itemsToDelete.length,
+        estimatedSize: totalSize,
+      ),
+    );
+
+    _isShowingBatchDialog = false;
+
+    if (result == true) {
+      await _deleteCurrentBatch();
+    }
+  }
+
+  Future<void> _deleteCurrentBatch() async {
+    if (_itemsToDelete.isEmpty) return;
+
+    _screenStateNotifier.value = ScreenState.processing;
+
+    final toDelete = List<MediaItem>.from(_itemsToDelete);
+    final deletedCount = await _mediaService.deleteMultipleMedia(toDelete);
+
+    _itemsToDelete.clear();
+    for (final item in toDelete) {
+      _fileSizeCache.remove(item.asset.id);
+    }
+
+    _screenStateNotifier.value = ScreenState.swiping;
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$deletedCount arquivos apagados'),
+          backgroundColor: const Color(0xFF2ED573),
+        ),
+      );
     }
   }
 
@@ -600,6 +668,121 @@ class _StatBadge extends StatelessWidget {
             style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _BatchDeleteDialog extends StatelessWidget {
+  final int count;
+  final int estimatedSize;
+
+  const _BatchDeleteDialog({required this.count, required this.estimatedSize});
+
+  String _formatSize(int bytes) {
+    const kb = 1024;
+    const mb = kb * 1024;
+    const gb = mb * 1024;
+
+    if (bytes >= gb) {
+      return '${(bytes / gb).toStringAsFixed(1)} GB';
+    } else if (bytes >= mb) {
+      return '${(bytes / mb).toStringAsFixed(1)} MB';
+    } else if (bytes >= kb) {
+      return '${(bytes / kb).toStringAsFixed(1)} KB';
+    } else {
+      return '$bytes B';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF1a1a2e),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF4757).withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.delete_sweep, color: Color(0xFFFF4757), size: 40),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              '$count arquivos selecionados',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (estimatedSize > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2ED573).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.storage, color: Color(0xFF2ED573), size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Economize ~${_formatSize(estimatedSize)}',
+                      style: const TextStyle(
+                        color: Color(0xFF2ED573),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 8),
+            Text(
+              'Deseja apagar agora ou continuar?',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Continuar'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF4757),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Apagar'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

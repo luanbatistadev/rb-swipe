@@ -1,16 +1,12 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../models/media_item.dart';
 import 'kept_media_service.dart';
 
-const _maxHashDistanceThreshold = 5;
-const _thumbnailSize = ThumbnailSize(8, 8);
-const _maxAssetsToScan = 3000;
-const _batchSize = 5;
-const _maxGroupSize = 50; // Limit group size to avoid O(n²) explosion
+const _maxAssetsToScan = 2000;
+const _timeWindowSeconds = 10;
 
 class DuplicateGroup {
   final List<MediaItem> items;
@@ -24,6 +20,7 @@ class DuplicateGroup {
 class DuplicateScanProgress {
   final int current;
   final int total;
+  final ScanPhase phase;
   final DuplicateGroup? newGroup;
   final bool isComplete;
   final String? error;
@@ -31,36 +28,34 @@ class DuplicateScanProgress {
   const DuplicateScanProgress({
     required this.current,
     required this.total,
+    this.phase = ScanPhase.loading,
     this.newGroup,
     this.isComplete = false,
     this.error,
   });
 }
 
+enum ScanPhase { loading, grouping, hashing }
+
 class DuplicateDetectorService {
   final KeptMediaService _keptService = KeptMediaService();
 
   Stream<DuplicateScanProgress> detectDuplicatesStream() async* {
     try {
-      // Yield immediately to show we're starting
-      yield const DuplicateScanProgress(current: 0, total: 0);
+      yield const DuplicateScanProgress(current: 0, total: 0, phase: ScanPhase.loading);
 
       final albums = await PhotoManager.getAssetPathList(type: RequestType.image, hasAll: true);
+
       if (albums.isEmpty) {
         yield const DuplicateScanProgress(current: 0, total: 0, isComplete: true);
         return;
       }
 
-      // Get assets in smaller chunks to avoid memory issues
       final allPhotos = albums.first;
       final assetCount = await allPhotos.assetCountAsync;
       final scanCount = assetCount.clamp(0, _maxAssetsToScan);
 
-      yield DuplicateScanProgress(current: 0, total: scanCount);
-
-      // Process assets in batches to group by dimensions
-      final Map<String, List<AssetEntity>> dimensionGroups = {};
-      var loadedCount = 0;
+      final allAssets = <AssetEntity>[];
 
       for (var start = 0; start < scanCount; start += 100) {
         final end = (start + 100).clamp(0, scanCount);
@@ -68,151 +63,108 @@ class DuplicateDetectorService {
 
         for (final asset in batch) {
           if (_keptService.isKept(asset.id)) continue;
-
-          final key = '${asset.width}x${asset.height}';
-          dimensionGroups.putIfAbsent(key, () => []).add(asset);
-          loadedCount++;
+          allAssets.add(asset);
         }
 
-        yield DuplicateScanProgress(current: loadedCount, total: scanCount);
+        yield DuplicateScanProgress(
+          current: allAssets.length,
+          total: scanCount,
+          phase: ScanPhase.loading,
+        );
+
         await Future.delayed(Duration.zero);
       }
 
-      // Filter to only groups with potential duplicates
-      final potentialDuplicates = dimensionGroups.entries
-          .where((e) => e.value.length > 1)
-          .map((e) => e.value)
-          .toList();
-
-      if (potentialDuplicates.isEmpty) {
+      if (allAssets.length < 2) {
         yield DuplicateScanProgress(current: scanCount, total: scanCount, isComplete: true);
         return;
       }
 
-      // Process each dimension group
-      for (final group in potentialDuplicates) {
-        // Limit group size to avoid very slow processing
-        final processGroup = group.length > _maxGroupSize ? group.sublist(0, _maxGroupSize) : group;
+      yield DuplicateScanProgress(current: 0, total: allAssets.length, phase: ScanPhase.grouping);
 
-        try {
-          final assetHashes = <AssetEntity, int>{};
+      final duplicateGroups = _findDuplicatesByDimensionAndTime(allAssets);
 
-          // Load thumbnails and compute hashes in small batches
-          for (var i = 0; i < processGroup.length; i += _batchSize) {
-            final batchEnd = (i + _batchSize).clamp(0, processGroup.length);
-            final batch = processGroup.sublist(i, batchEnd);
+      var processed = 0;
+      for (final group in duplicateGroups) {
+        final items = group.map(MediaItem.fromAsset).toList();
 
-            for (final asset in batch) {
-              try {
-                final thumb = await asset
-                    .thumbnailDataWithSize(_thumbnailSize, quality: 50)
-                    .timeout(const Duration(seconds: 2), onTimeout: () => null);
+        yield DuplicateScanProgress(
+          current: processed,
+          total: duplicateGroups.length,
+          phase: ScanPhase.hashing,
+          newGroup: DuplicateGroup(items: items, totalSize: 0),
+        );
 
-                if (thumb != null && thumb.isNotEmpty) {
-                  final hash = _averageHash(thumb);
-                  assetHashes[asset] = hash;
-                }
-              } catch (_) {
-                // Skip this asset
-              }
-            }
+        processed++;
 
-            await Future.delayed(Duration.zero);
-          }
-
-          if (assetHashes.length < 2) continue;
-
-          // Group by similarity - use simple approach for small groups
-          final duplicateGroups = _groupByHashSimilarity(assetHashes);
-
-          for (final dupGroup in duplicateGroups) {
-            if (dupGroup.length > 1) {
-              final items = dupGroup.map(MediaItem.fromAsset).toList();
-
-              // Get sizes with short timeout
-              var totalSize = 0;
-              for (final item in items) {
-                try {
-                  final size = await item.fileSizeAsync
-                      .timeout(const Duration(seconds: 1), onTimeout: () => 0);
-                  totalSize += size;
-                } catch (_) {}
-              }
-
-              yield DuplicateScanProgress(
-                current: loadedCount,
-                total: scanCount,
-                newGroup: DuplicateGroup(items: items, totalSize: totalSize),
-              );
-            }
-          }
-        } catch (e) {
-          debugPrint('Error processing dimension group: $e');
+        if (processed % 5 == 0) {
+          await Future.delayed(Duration.zero);
         }
-
-        await Future.delayed(Duration.zero);
       }
 
-      yield DuplicateScanProgress(current: scanCount, total: scanCount, isComplete: true);
+      yield DuplicateScanProgress(
+        current: duplicateGroups.length,
+        total: duplicateGroups.length,
+        isComplete: true,
+      );
     } catch (e) {
       yield DuplicateScanProgress(current: 0, total: 0, isComplete: true, error: e.toString());
     }
   }
 
-  // Simple hash computation - runs on main thread but is fast
-  int _averageHash(Uint8List imageData) {
-    if (imageData.isEmpty) return 0;
-
-    var sum = 0;
-    for (var i = 0; i < imageData.length; i++) {
-      sum += imageData[i];
-    }
-    final avg = sum ~/ imageData.length;
-
-    var hash = 0;
-    for (var i = 0; i < imageData.length && i < 64; i++) {
-      if (imageData[i] > avg) {
-        hash |= (1 << i);
-      }
-    }
-    return hash;
-  }
-
-  // Simple grouping - O(n²) but limited by _maxGroupSize
-  List<List<AssetEntity>> _groupByHashSimilarity(Map<AssetEntity, int> hashes) {
-    final assets = hashes.keys.toList();
-    final visited = <AssetEntity>{};
-    final groups = <List<AssetEntity>>[];
+  List<List<AssetEntity>> _findDuplicatesByDimensionAndTime(List<AssetEntity> assets) {
+    final dimensionGroups = <String, List<AssetEntity>>{};
 
     for (final asset in assets) {
-      if (visited.contains(asset)) continue;
+      final key = '${asset.width}x${asset.height}';
+      dimensionGroups.putIfAbsent(key, () => []).add(asset);
+    }
 
-      final group = <AssetEntity>[asset];
-      visited.add(asset);
+    final result = <List<AssetEntity>>[];
 
-      for (final other in assets) {
-        if (visited.contains(other)) continue;
+    for (final dimGroup in dimensionGroups.values) {
+      if (dimGroup.length < 2) continue;
 
-        final distance = _hammingDistance(hashes[asset]!, hashes[other]!);
-        if (distance <= _maxHashDistanceThreshold) {
-          group.add(other);
-          visited.add(other);
+      final timeGroups = _groupByTimeProximity(dimGroup);
+      result.addAll(timeGroups);
+    }
+
+    result.sort((a, b) {
+      final aTime = a.first.createDateTime;
+      final bTime = b.first.createDateTime;
+      return bTime.compareTo(aTime);
+    });
+
+    return result;
+  }
+
+  List<List<AssetEntity>> _groupByTimeProximity(List<AssetEntity> assets) {
+    if (assets.length < 2) return [];
+
+    final sorted = assets.toList()..sort((a, b) => a.createDateTime.compareTo(b.createDateTime));
+
+    final groups = <List<AssetEntity>>[];
+    var currentGroup = <AssetEntity>[sorted.first];
+
+    for (var i = 1; i < sorted.length; i++) {
+      final prev = sorted[i - 1].createDateTime;
+      final curr = sorted[i].createDateTime;
+      final diffSeconds = curr.difference(prev).inSeconds.abs();
+
+      if (diffSeconds <= _timeWindowSeconds) {
+        currentGroup.add(sorted[i]);
+      } else {
+        if (currentGroup.length > 1) {
+          groups.add(currentGroup);
         }
+        currentGroup = [sorted[i]];
       }
+    }
 
-      groups.add(group);
+    if (currentGroup.length > 1) {
+      groups.add(currentGroup);
     }
 
     return groups;
-  }
-
-  int _hammingDistance(int a, int b) {
-    var xor = a ^ b;
-    var count = 0;
-    while (xor != 0) {
-      count += xor & 1;
-      xor >>= 1;
-    }
-    return count;
   }
 }
