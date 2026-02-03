@@ -250,9 +250,12 @@ class _MainContent extends StatelessWidget {
             delegate: SliverChildBuilderDelegate(
               (context, index) {
                 final group = groups[index];
-                return _MonthRow(
-                  group: group,
-                  onTap: () => onGroupSelected(group),
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _MonthCard(
+                    group: group,
+                    onTap: () => onGroupSelected(group),
+                  ),
                 );
               },
               childCount: groups.length,
@@ -442,51 +445,58 @@ class _OnThisDayCard extends StatelessWidget {
   }
 }
 
-class _MonthRow extends StatelessWidget {
+class _MonthCard extends StatelessWidget {
   final DateGroup group;
   final VoidCallback onTap;
 
-  const _MonthRow({required this.group, required this.onTap});
+  const _MonthCard({required this.group, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1a1a2e),
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: Row(
           children: [
-            SizedBox(
-              width: 44,
-              child: Text(
-                fullMonthNames[group.date.month - 1].substring(0, 3),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    fullMonthNames[group.date.month - 1],
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    group.date.year.toString(),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.4),
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
               ),
             ),
-            Text(
-              group.date.year.toString(),
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.3),
-                fontSize: 15,
-              ),
-            ),
-            const Spacer(),
             Text(
               '${group.count}',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
+                color: Colors.white.withValues(alpha: 0.5),
                 fontSize: 14,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             Icon(
               Icons.chevron_right,
-              color: Colors.white.withValues(alpha: 0.2),
+              color: Colors.white.withValues(alpha: 0.3),
               size: 20,
             ),
           ],
