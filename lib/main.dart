@@ -1,23 +1,43 @@
+import 'dart:async';
+
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'firebase_options.dart';
 import 'screens/date_selection_screen.dart';
 import 'services/kept_media_service.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  runZonedGuarded<Future<void>>(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  await KeptMediaService().init();
+    await Future.wait([
+      Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
+      KeptMediaService().init(),
+    ]);
 
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      statusBarBrightness: Brightness.dark,
-    ),
-  );
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
 
-  runApp(const SwipeCleanerApp());
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+      ),
+    );
+
+    runApp(const SwipeCleanerApp());
+  }, (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+  });
 }
 
 class SwipeCleanerApp extends StatelessWidget {
@@ -26,7 +46,7 @@ class SwipeCleanerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Swipe Cleaner',
+      title: 'RB Swipe',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

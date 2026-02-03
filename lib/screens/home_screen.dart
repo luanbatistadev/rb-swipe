@@ -20,8 +20,9 @@ class _SwipeAction {
 class HomeScreen extends StatefulWidget {
   final DateTime? selectedDate;
   final AssetPathEntity? album;
+  final bool isOnThisDay;
 
-  const HomeScreen({super.key, this.selectedDate, this.album});
+  const HomeScreen({super.key, this.selectedDate, this.album, this.isOnThisDay = false});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -73,10 +74,19 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (widget.selectedDate != null && widget.album != null) {
-      _mediaItems = await _mediaService.loadMediaByDate(
-        date: widget.selectedDate!,
-        album: widget.album!,
-      );
+      if (widget.isOnThisDay) {
+        _mediaItems = await _mediaService.loadMediaByDayAndYear(
+          day: widget.selectedDate!.day,
+          month: widget.selectedDate!.month,
+          year: widget.selectedDate!.year,
+          album: widget.album!,
+        );
+      } else {
+        _mediaItems = await _mediaService.loadMediaByDate(
+          date: widget.selectedDate!,
+          album: widget.album!,
+        );
+      }
     } else {
       _mediaItems = await _mediaService.loadAllMedia();
     }
@@ -318,6 +328,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _getTitle() {
     if (widget.selectedDate == null) return 'Swipe Cleaner';
+    if (widget.isOnThisDay) {
+      final now = DateTime.now();
+      final yearsAgo = now.year - widget.selectedDate!.year;
+      return '$yearsAgo ${yearsAgo == 1 ? 'ano' : 'anos'} atrás';
+    }
     return '${fullMonthNames[widget.selectedDate!.month - 1]} / ${widget.selectedDate!.year}';
   }
 }

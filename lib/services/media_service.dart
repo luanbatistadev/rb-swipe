@@ -30,6 +30,30 @@ class DateGroup {
   String get label => '${_shortMonthNames[date.month - 1]} ${date.year}';
 }
 
+class OnThisDayGroup {
+  final int year;
+  final int day;
+  final int month;
+  final int count;
+  final AssetPathEntity? album;
+
+  OnThisDayGroup({
+    required this.year,
+    required this.day,
+    required this.month,
+    required this.count,
+    this.album,
+  });
+
+  DateTime get date => DateTime(year, month, day);
+
+  String get label {
+    final now = DateTime.now();
+    final yearsAgo = now.year - year;
+    return '$yearsAgo ${yearsAgo == 1 ? 'ano' : 'anos'} atrás';
+  }
+}
+
 class MediaService {
   final KeptMediaService _keptService = KeptMediaService();
 
@@ -66,6 +90,57 @@ class MediaService {
         .where((g) => g.count > 0)
         .toList()
       ..sort((a, b) => b.date.compareTo(a.date));
+  }
+
+  Future<List<OnThisDayGroup>> getOnThisDay() async {
+    final albums = await PhotoManager.getAssetPathList(type: RequestType.common, hasAll: true);
+    if (albums.isEmpty) return [];
+
+    final allPhotos = albums.first;
+    final assets = await allPhotos.getAssetListRange(start: 0, end: 10000);
+
+    final now = DateTime.now();
+    final Map<int, int> yearCounts = {};
+
+    for (final asset in assets) {
+      if (_keptService.isKept(asset.id)) continue;
+
+      final dt = asset.createDateTime;
+      if (dt.month == now.month && dt.day == now.day && dt.year != now.year) {
+        yearCounts[dt.year] = (yearCounts[dt.year] ?? 0) + 1;
+      }
+    }
+
+    return yearCounts.entries
+        .map((e) => OnThisDayGroup(
+              year: e.key,
+              day: now.day,
+              month: now.month,
+              count: e.value,
+              album: allPhotos,
+            ))
+        .toList()
+      ..sort((a, b) => b.year.compareTo(a.year));
+  }
+
+  Future<List<MediaItem>> loadMediaByDayAndYear({
+    required int day,
+    required int month,
+    required int year,
+    required AssetPathEntity album,
+  }) async {
+    final allAssets = await album.getAssetListRange(start: 0, end: 10000);
+
+    final filtered = allAssets
+        .where((e) =>
+            e.createDateTime.year == year &&
+            e.createDateTime.month == month &&
+            e.createDateTime.day == day &&
+            !_keptService.isKept(e.id))
+        .toList()
+      ..sort((a, b) => b.createDateTime.compareTo(a.createDateTime));
+
+    return filtered.map(MediaItem.fromAsset).toList();
   }
 
   Future<List<MediaItem>> loadMediaByDate({
