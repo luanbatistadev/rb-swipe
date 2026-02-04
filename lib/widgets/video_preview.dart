@@ -27,6 +27,19 @@ class _VideoPreviewState extends State<VideoPreview> {
     _loadThumbnail();
   }
 
+  @override
+  void didUpdateWidget(VideoPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.mediaItem.asset.id != widget.mediaItem.asset.id) {
+      _controller?.dispose();
+      _controller = null;
+      _isInitialized = false;
+      _isPlaying = false;
+      _thumbnail = null;
+      _loadThumbnail();
+    }
+  }
+
   Future<void> _loadThumbnail() async {
     final thumb = await widget.mediaItem.asset.thumbnailDataWithSize(
       const ThumbnailSize(800, 800),
