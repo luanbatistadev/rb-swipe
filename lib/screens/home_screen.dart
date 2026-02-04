@@ -169,6 +169,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _fileSizeCache.remove(item.asset.id);
     }
 
+    _totalCountNotifier.value -= deletedCount;
+    _deletedCountNotifier.value -= deletedCount;
     _screenStateNotifier.value = ScreenState.swiping;
 
     if (mounted) {
@@ -231,11 +233,36 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _screenStateNotifier.value = ScreenState.processing;
 
+    final countToDelete = _itemsToDelete.length;
     await _mediaService.deleteMultipleMedia(_itemsToDelete);
     _itemsToDelete.clear();
     _fileSizeCache.clear();
 
+    _totalCountNotifier.value -= countToDelete;
+    _deletedCountNotifier.value -= countToDelete;
     _screenStateNotifier.value = ScreenState.finished;
+  }
+
+  Future<void> _onDeleteBadgeTap() async {
+    if (_itemsToDelete.isEmpty) return;
+
+    int totalSize = 0;
+    for (final item in _itemsToDelete) {
+      totalSize += _fileSizeCache[item.asset.id] ?? 0;
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _BatchDeleteDialog(
+        count: _itemsToDelete.length,
+        estimatedSize: totalSize,
+      ),
+    );
+
+    if (result == true) {
+      await _deleteCurrentBatch();
+    }
   }
 
   void _onDeletePressed() {
@@ -276,6 +303,7 @@ class _HomeScreenState extends State<HomeScreen> {
               deletedCountNotifier: _deletedCountNotifier,
               keptCountNotifier: _keptCountNotifier,
               title: _getTitle(),
+              onDeleteTap: _onDeleteBadgeTap,
             ),
             Expanded(
               child: ValueListenableBuilder<ScreenState>(
@@ -427,12 +455,14 @@ class _Header extends StatelessWidget {
   final ValueNotifier<int> deletedCountNotifier;
   final ValueNotifier<int> keptCountNotifier;
   final String title;
+  final VoidCallback? onDeleteTap;
 
   const _Header({
     required this.totalCountNotifier,
     required this.deletedCountNotifier,
     required this.keptCountNotifier,
     required this.title,
+    this.onDeleteTap,
   });
 
   @override
@@ -471,10 +501,14 @@ class _Header extends StatelessWidget {
                 children: [
                   ValueListenableBuilder<int>(
                     valueListenable: deletedCountNotifier,
-                    builder: (context, count, _) => _StatBadge(
-                      icon: Icons.delete,
-                      count: count,
-                      color: const Color(0xFFFF4757),
+                    builder: (context, count, _) => GestureDetector(
+                      onTap: count > 0 ? onDeleteTap : null,
+                      child: _StatBadge(
+                        icon: Icons.delete,
+                        count: count,
+                        color: const Color(0xFFFF4757),
+                        isClickable: count > 0 && onDeleteTap != null,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -673,8 +707,14 @@ class _StatBadge extends StatelessWidget {
   final IconData icon;
   final int count;
   final Color color;
+  final bool isClickable;
 
-  const _StatBadge({required this.icon, required this.count, required this.color});
+  const _StatBadge({
+    required this.icon,
+    required this.count,
+    required this.color,
+    this.isClickable = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -683,7 +723,10 @@ class _StatBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        border: Border.all(
+          color: color.withValues(alpha: isClickable ? 0.8 : 0.3),
+          width: isClickable ? 2 : 1,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
