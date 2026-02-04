@@ -1,0 +1,28 @@
+default_platform(:android)
+
+platform :android do
+  desc "Build and distribute to Firebase App Distribution"
+  lane :distribute do
+    release_notes = sh("git log -2 --pretty=format:'• %s' --no-merges").strip
+
+    Dir.chdir("../..") do
+      sh("flutter build apk --release")
+    end
+
+    apk_path = File.expand_path("../../build/app/outputs/flutter-apk/app-release.apk")
+
+    sh(
+      "firebase appdistribution:distribute '#{apk_path}' " \
+      "--app 1:815105049383:android:a6afa30c0e605284fa1f02 " \
+      "--groups testers " \
+      "--release-notes \"#{release_notes}\""
+    )
+  end
+
+  desc "Build APK only"
+  lane :build do
+    Dir.chdir("../..") do
+      sh("flutter build apk --release")
+    end
+  end
+end
