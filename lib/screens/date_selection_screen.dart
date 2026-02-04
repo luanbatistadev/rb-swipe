@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/media_service.dart'
     show DateGroup, MediaService, OnThisDayGroup, fullMonthNames;
+import 'blurry_photos_screen.dart';
 import 'duplicates_screen.dart';
 import 'home_screen.dart';
 import 'screenshots_screen.dart';
@@ -84,6 +85,13 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
     );
   }
 
+  void _openBlurryPhotos() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const BlurryPhotosScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -112,6 +120,7 @@ class _DateSelectionScreenState extends State<DateSelectionScreen> {
       onOnThisDaySelected: _onOnThisDaySelected,
       onDuplicatesTap: _openDuplicates,
       onScreenshotsTap: _openScreenshots,
+      onBlurryPhotosTap: _openBlurryPhotos,
     );
   }
 }
@@ -179,6 +188,7 @@ class _MainContent extends StatelessWidget {
   final void Function(OnThisDayGroup) onOnThisDaySelected;
   final VoidCallback onDuplicatesTap;
   final VoidCallback onScreenshotsTap;
+  final VoidCallback onBlurryPhotosTap;
 
   const _MainContent({
     required this.groups,
@@ -187,6 +197,7 @@ class _MainContent extends StatelessWidget {
     required this.onOnThisDaySelected,
     required this.onDuplicatesTap,
     required this.onScreenshotsTap,
+    required this.onBlurryPhotosTap,
   });
 
   @override
@@ -221,6 +232,7 @@ class _MainContent extends StatelessWidget {
                 _ToolsRow(
                   onDuplicatesTap: onDuplicatesTap,
                   onScreenshotsTap: onScreenshotsTap,
+                  onBlurryPhotosTap: onBlurryPhotosTap,
                 ),
                 if (onThisDayGroups.isNotEmpty) ...[
                   const SizedBox(height: 36),
@@ -271,30 +283,49 @@ class _MainContent extends StatelessWidget {
 class _ToolsRow extends StatelessWidget {
   final VoidCallback onDuplicatesTap;
   final VoidCallback onScreenshotsTap;
+  final VoidCallback onBlurryPhotosTap;
 
   const _ToolsRow({
     required this.onDuplicatesTap,
     required this.onScreenshotsTap,
+    required this.onBlurryPhotosTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _ToolCard(
-            icon: Icons.filter_none_rounded,
-            label: 'Duplicadas',
-            onTap: onDuplicatesTap,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _ToolCard(
+                icon: Icons.filter_none_rounded,
+                label: 'Duplicadas',
+                onTap: onDuplicatesTap,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _ToolCard(
+                icon: Icons.crop_square_rounded,
+                label: 'Screenshots',
+                onTap: onScreenshotsTap,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _ToolCard(
-            icon: Icons.crop_square_rounded,
-            label: 'Screenshots',
-            onTap: onScreenshotsTap,
-          ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _ToolCard(
+                icon: Icons.blur_on_rounded,
+                label: 'Borradas',
+                onTap: onBlurryPhotosTap,
+              ),
+            ),
+            const Spacer(),
+          ],
         ),
       ],
     );
