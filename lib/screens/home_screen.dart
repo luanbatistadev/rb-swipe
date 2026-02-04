@@ -210,20 +210,32 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
+    int totalSize = 0;
+    for (final item in _itemsToDelete) {
+      totalSize += _fileSizeCache[item.asset.id] ?? 0;
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _FinalDeleteDialog(
+        count: _itemsToDelete.length,
+        estimatedSize: totalSize,
+      ),
+    );
+
+    if (result != true) {
+      _screenStateNotifier.value = ScreenState.finished;
+      return;
+    }
+
     _screenStateNotifier.value = ScreenState.processing;
 
-    final deletedCount = await _mediaService.deleteMultipleMedia(_itemsToDelete);
+    await _mediaService.deleteMultipleMedia(_itemsToDelete);
+    _itemsToDelete.clear();
+    _fileSizeCache.clear();
 
     _screenStateNotifier.value = ScreenState.finished;
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$deletedCount arquivos apagados'),
-          backgroundColor: const Color(0xFF2ED573),
-        ),
-      );
-    }
   }
 
   void _onDeletePressed() {
@@ -683,6 +695,120 @@ class _StatBadge extends StatelessWidget {
             style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _FinalDeleteDialog extends StatelessWidget {
+  final int count;
+  final int estimatedSize;
+
+  const _FinalDeleteDialog({required this.count, required this.estimatedSize});
+
+  String _formatSize(int bytes) {
+    const kb = 1024;
+    const mb = kb * 1024;
+    const gb = mb * 1024;
+
+    if (bytes >= gb) {
+      return '${(bytes / gb).toStringAsFixed(1)} GB';
+    } else if (bytes >= mb) {
+      return '${(bytes / mb).toStringAsFixed(1)} MB';
+    } else if (bytes >= kb) {
+      return '${(bytes / kb).toStringAsFixed(1)} KB';
+    } else {
+      return '$bytes B';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF1a1a2e),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2ED573).withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check_circle, color: Color(0xFF2ED573), size: 40),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Revisão concluída!',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$count arquivos para apagar',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            if (estimatedSize > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2ED573).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.storage, color: Color(0xFF2ED573), size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Economize ~${_formatSize(estimatedSize)}',
+                      style: const TextStyle(
+                        color: Color(0xFF2ED573),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Cancelar'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF4757),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Apagar'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
