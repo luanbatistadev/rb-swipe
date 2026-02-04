@@ -58,3 +58,13 @@ app.*.map.json
 .env.local
 .env.*.local
 !.env.example
+
+# Fastlane
+**/fastlane/report.xml
+**/fastlane/Preview.html
+**/fastlane/screenshots
+**/fastlane/test_output
+
+# Lock files
+Gemfile.lock
+Podfile.lock
