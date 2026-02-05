@@ -5,6 +5,7 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -20,11 +21,8 @@ Future<void> main() async {
       await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
       tz.initializeTimeZones();
-      try {
-        tz.setLocalLocation(tz.getLocation('America/Sao_Paulo'));
-      } catch (_) {
-        tz.setLocalLocation(tz.getLocation('UTC'));
-      }
+      final String timezoneName = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(timezoneName));
 
       await Future.wait([
         KeptMediaService().init(),

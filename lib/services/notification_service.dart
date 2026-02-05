@@ -122,8 +122,8 @@ class NotificationService {
   Future<void> scheduleWeeklyCleanup() async {
     await _notifications.zonedSchedule(
       id: 100,
-      title: 'Limpeza Semanal',
-      body: 'Hora de revisar suas fotos!',
+      title: '🧹 Bora dar aquela organizada?',
+      body: 'Sua galeria ta pedindo uma limpeza! Que tal dar uma olhada?',
       scheduledDate: _nextWeekday(DateTime.monday, 10),
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
@@ -144,13 +144,13 @@ class NotificationService {
   Future<void> scheduleOnThisDayDaily() async {
     await _notifications.zonedSchedule(
       id: 101,
-      title: 'On This Day',
-      body: 'Veja suas memorias de hoje',
+      title: '📸 Neste Dia',
+      body: 'Olha so que memorias legais de anos atras! Vem relembrar',
       scheduledDate: _nextInstanceOfTime(9, 0),
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           'on_this_day',
-          'On This Day',
+          'Neste Dia',
           channelDescription: 'Notificacoes diarias de memorias',
           importance: Importance.high,
           priority: Priority.high,
