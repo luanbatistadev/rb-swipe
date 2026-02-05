@@ -1,7 +1,7 @@
 name: swipe
 description: "Swipe Cleaner - Organize suas fotos e vídeos"
 publish_to: "none"
-version: 0.0.4+13
+version: 0.0.5+15
 
 environment:
   sdk: ^3.9.0
@@ -19,6 +19,9 @@ dependencies:
   firebase_core: ^4.4.0
   firebase_crashlytics: ^5.0.7
   image: ^4.7.2
+  flutter_local_notifications: ^20.0.0
+  shared_preferences: ^2.5.4
+  timezone: ^0.10.1
 
 dev_dependencies:
   flutter_test:

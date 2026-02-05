@@ -5,39 +5,55 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:timezone/data/latest_all.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 
 import 'firebase_options.dart';
 import 'screens/date_selection_screen.dart';
 import 'services/kept_media_service.dart';
+import 'services/notification_service.dart';
 
 Future<void> main() async {
-  runZonedGuarded<Future<void>>(() async {
-    WidgetsFlutterBinding.ensureInitialized();
+  runZonedGuarded<Future<void>>(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-    await Future.wait([
-      Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
-      KeptMediaService().init(),
-    ]);
+      tz.initializeTimeZones();
+      try {
+        tz.setLocalLocation(tz.getLocation('America/Sao_Paulo'));
+      } catch (_) {
+        tz.setLocalLocation(tz.getLocation('UTC'));
+      }
 
-    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+      await Future.wait([
+        KeptMediaService().init(),
+        NotificationService().initialize(),
+      ]);
 
-    PlatformDispatcher.instance.onError = (error, stack) {
+      await NotificationService().scheduleRecurringNotifications();
+
+      FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+
+      PlatformDispatcher.instance.onError = (error, stack) {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        return true;
+      };
+
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+        ),
+      );
+
+      runApp(const SwipeCleanerApp());
+    },
+    (error, stack) {
       FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-      return true;
-    };
-
-    SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.light,
-        statusBarBrightness: Brightness.dark,
-      ),
-    );
-
-    runApp(const SwipeCleanerApp());
-  }, (error, stack) {
-    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-  });
+    },
+  );
 }
 
 class SwipeCleanerApp extends StatelessWidget {

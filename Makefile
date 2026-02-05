@@ -4,6 +4,9 @@ deploy: deploy-ios deploy-android
 	@echo "Deploy completo para iOS e Android!"
 
 deploy-ios:
+	@echo "Limpando frameworks de simulador..."
+	@find ios/Pods -name "*_sim.framework" -type d -exec rm -rf {} + 2>/dev/null || true
+	@find ios/Pods -name "*Simulator*.framework" -type d -exec rm -rf {} + 2>/dev/null || true
 	@echo "Subindo para TestFlight..."
 	cd ios && bundle exec fastlane beta
 
