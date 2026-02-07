@@ -8,47 +8,62 @@ import 'video_preview.dart';
 
 class CachedMediaData {
   final Uint8List? thumbnail;
-  final int fileSize;
+  int fileSize;
 
   CachedMediaData({this.thumbnail, this.fileSize = 0});
 }
 
 class ThumbnailCache {
   static final Map<String, CachedMediaData> _cache = {};
-  static final Set<String> _loading = {};
+  static final Map<String, Future<CachedMediaData>> _loadingFutures = {};
 
   static CachedMediaData? getCached(String id) => _cache[id];
 
   static Future<CachedMediaData> getMediaData(MediaItem item) async {
     final id = item.asset.id;
 
-    if (_cache.containsKey(id)) {
-      return _cache[id]!;
+    if (_cache.containsKey(id)) return _cache[id]!;
+    if (_loadingFutures.containsKey(id)) return _loadingFutures[id]!;
+
+    final future = _loadThumbnail(item);
+    _loadingFutures[id] = future;
+
+    try {
+      return await future;
+    } finally {
+      _loadingFutures.remove(id);
     }
+  }
 
-    if (_loading.contains(id)) {
-      while (_loading.contains(id)) {
-        await Future.delayed(const Duration(milliseconds: 10));
-      }
-      return _cache[id] ?? CachedMediaData();
+  static Future<CachedMediaData> _loadThumbnail(MediaItem item) async {
+    try {
+      final thumbnail = item.isVideo
+          ? null
+          : await item.asset.thumbnailDataWithSize(
+              const ThumbnailSize(800, 800),
+              quality: 90,
+            );
+
+      final data = CachedMediaData(thumbnail: thumbnail);
+      _cache[item.asset.id] = data;
+      return data;
+    } catch (_) {
+      final data = CachedMediaData();
+      _cache[item.asset.id] = data;
+      return data;
     }
+  }
 
-    _loading.add(id);
+  static Future<int> loadFileSize(MediaItem item) async {
+    final id = item.asset.id;
+    final cached = _cache[id];
+    if (cached != null && cached.fileSize > 0) return cached.fileSize;
 
-    final thumbnailFuture = item.isVideo
-        ? Future<Uint8List?>.value(null)
-        : item.asset.thumbnailDataWithSize(const ThumbnailSize(800, 800), quality: 90);
-
-    final results = await Future.wait([thumbnailFuture, item.fileSizeAsync]);
-
-    final thumbnail = results[0] as Uint8List?;
-    final fileSize = results[1] as int;
-
-    final data = CachedMediaData(thumbnail: thumbnail, fileSize: fileSize);
-    _cache[id] = data;
-    _loading.remove(id);
-
-    return data;
+    final size = await item.fileSizeAsync;
+    if (cached != null) {
+      cached.fileSize = size;
+    }
+    return size;
   }
 
   static void preloadThumbnails(List<MediaItem> items, int startIndex, int count) {
@@ -62,7 +77,7 @@ class ThumbnailCache {
 
   static void clear() {
     _cache.clear();
-    _loading.clear();
+    _loadingFutures.clear();
   }
 }
 
@@ -101,12 +116,22 @@ class _MediaCardState extends State<MediaCard> {
     final cached = ThumbnailCache.getCached(widget.mediaItem.asset.id);
     if (cached != null) {
       _data = cached;
+      _loadFileSize();
       return;
     }
 
     ThumbnailCache.getMediaData(widget.mediaItem).then((data) {
       if (mounted) {
         setState(() => _data = data);
+        _loadFileSize();
+      }
+    });
+  }
+
+  void _loadFileSize() {
+    ThumbnailCache.loadFileSize(widget.mediaItem).then((size) {
+      if (mounted && size > 0) {
+        setState(() {});
       }
     });
   }

@@ -10,7 +10,7 @@ import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
 import 'firebase_options.dart';
-import 'screens/date_selection_screen.dart';
+import 'screens/gallery_screen.dart';
 import 'services/kept_media_service.dart';
 import 'services/notification_service.dart';
 
@@ -75,7 +75,7 @@ class SwipeCleanerApp extends StatelessWidget {
         fontFamily: 'SF Pro Display',
         appBarTheme: const AppBarTheme(backgroundColor: Colors.transparent, elevation: 0),
       ),
-      home: const DateSelectionScreen(),
+      home: const GalleryScreen(),
     );
   }
 }

@@ -8,7 +8,9 @@ import '../models/media_item.dart';
 import 'kept_media_service.dart';
 
 const _blurThreshold = 100.0;
-const _thumbnailSize = 200;
+const _thumbnailSize = 100;
+const _maxScan = 500;
+const _concurrency = 4;
 
 class BlurryPhoto {
   final MediaItem item;
@@ -60,34 +62,44 @@ class BlurDetectionService {
 
       final allPhotos = albums.first;
       final totalCount = await allPhotos.assetCountAsync;
-      final scanCount = totalCount.clamp(0, 500);
+      final scanCount = totalCount.clamp(0, _maxScan);
 
       yield BlurryScanProgress(current: 0, total: scanCount, blurryPhotos: blurryPhotos);
 
+      int processed = 0;
       const batchSize = 20;
+
       for (var start = 0; start < scanCount; start += batchSize) {
         final end = (start + batchSize).clamp(0, scanCount);
         final assets = await allPhotos.getAssetListRange(start: start, end: end);
 
+        final candidates = <AssetEntity>[];
         for (final asset in assets) {
           if (_keptService.isKept(asset.id)) continue;
           if (asset.type != AssetType.image) continue;
+          candidates.add(asset);
+        }
 
-          try {
-            final blurScore = await _calculateBlurScore(asset);
-            if (blurScore != null && blurScore < _blurThreshold) {
+        for (var i = 0; i < candidates.length; i += _concurrency) {
+          final chunk = candidates.skip(i).take(_concurrency).toList();
+          final futures = chunk.map((asset) => _calculateBlurScore(asset));
+          final results = await Future.wait(futures);
+
+          for (var j = 0; j < chunk.length; j++) {
+            final score = results[j];
+            if (score != null && score < _blurThreshold) {
               blurryPhotos.add(BlurryPhoto(
-                item: MediaItem.fromAsset(asset),
-                blurScore: blurScore,
+                item: MediaItem.fromAsset(chunk[j]),
+                blurScore: score,
               ));
             }
-          } catch (e) {
-            debugPrint('Error analyzing image: $e');
           }
         }
 
+        processed += assets.length;
+
         yield BlurryScanProgress(
-          current: end,
+          current: processed.clamp(0, scanCount),
           total: scanCount,
           blurryPhotos: List.from(blurryPhotos),
         );
@@ -116,7 +128,7 @@ class BlurDetectionService {
   Future<double?> _calculateBlurScore(AssetEntity asset) async {
     final thumbData = await asset.thumbnailDataWithSize(
       const ThumbnailSize(_thumbnailSize, _thumbnailSize),
-      quality: 80,
+      quality: 60,
     );
 
     if (thumbData == null) return null;
@@ -130,29 +142,40 @@ double _computeLaplacianVariance(Uint8List imageData) {
   if (image == null) return 999.0;
 
   final grayscale = img.grayscale(image);
-
   final width = grayscale.width;
   final height = grayscale.height;
 
-  final laplacianValues = <double>[];
+  if (width < 3 || height < 3) return 999.0;
+
+  final buffer = grayscale.buffer.asUint8List();
+  final rowStride = width * 4;
+
+  double sum = 0;
+  double sumSq = 0;
+  int count = 0;
 
   for (var y = 1; y < height - 1; y++) {
+    final rowOffset = y * rowStride;
+    final topOffset = (y - 1) * rowStride;
+    final bottomOffset = (y + 1) * rowStride;
+
     for (var x = 1; x < width - 1; x++) {
-      final center = grayscale.getPixel(x, y).r.toDouble();
-      final top = grayscale.getPixel(x, y - 1).r.toDouble();
-      final bottom = grayscale.getPixel(x, y + 1).r.toDouble();
-      final left = grayscale.getPixel(x - 1, y).r.toDouble();
-      final right = grayscale.getPixel(x + 1, y).r.toDouble();
+      final px = x * 4;
+      final center = buffer[rowOffset + px].toDouble();
+      final top = buffer[topOffset + px].toDouble();
+      final bottom = buffer[bottomOffset + px].toDouble();
+      final left = buffer[rowOffset + (x - 1) * 4].toDouble();
+      final right = buffer[rowOffset + (x + 1) * 4].toDouble();
 
       final laplacian = (4 * center) - top - bottom - left - right;
-      laplacianValues.add(laplacian);
+      sum += laplacian;
+      sumSq += laplacian * laplacian;
+      count++;
     }
   }
 
-  if (laplacianValues.isEmpty) return 999.0;
+  if (count == 0) return 999.0;
 
-  final mean = laplacianValues.reduce((a, b) => a + b) / laplacianValues.length;
-  final variance = laplacianValues.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) / laplacianValues.length;
-
-  return variance;
+  final mean = sum / count;
+  return (sumSq / count) - (mean * mean);
 }

@@ -66,8 +66,9 @@ class MediaService {
     final albums = await PhotoManager.getAssetPathList(type: RequestType.common, hasAll: true);
     if (albums.isEmpty) return [];
 
-    final allPhotos = albums.first;
-    final assets = await allPhotos.getAssetListRange(start: 0, end: 5000);
+    final allPhotos = await albums.first.fetchPathProperties() ?? albums.first;
+    final count = await allPhotos.assetCountAsync;
+    final assets = await allPhotos.getAssetListRange(start: 0, end: count);
 
     final Map<String, int> groups = {};
     for (final asset in assets) {
@@ -96,8 +97,9 @@ class MediaService {
     final albums = await PhotoManager.getAssetPathList(type: RequestType.common, hasAll: true);
     if (albums.isEmpty) return [];
 
-    final allPhotos = albums.first;
-    final assets = await allPhotos.getAssetListRange(start: 0, end: 10000);
+    final allPhotos = await albums.first.fetchPathProperties() ?? albums.first;
+    final count = await allPhotos.assetCountAsync;
+    final assets = await allPhotos.getAssetListRange(start: 0, end: count);
 
     final now = DateTime.now();
     final Map<int, int> yearCounts = {};
@@ -129,35 +131,60 @@ class MediaService {
     required int year,
     required AssetPathEntity album,
   }) async {
-    final allAssets = await album.getAssetListRange(start: 0, end: 10000);
+    final filter = FilterOptionGroup(
+      createTimeCond: DateTimeCond(
+        min: DateTime(year, month, day),
+        max: DateTime(year, month, day, 23, 59, 59),
+      ),
+      orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+    );
 
-    final filtered = allAssets
-        .where((e) =>
-            e.createDateTime.year == year &&
-            e.createDateTime.month == month &&
-            e.createDateTime.day == day &&
-            !_keptService.isKept(e.id))
-        .toList()
-      ..sort((a, b) => b.createDateTime.compareTo(a.createDateTime));
+    final albums = await PhotoManager.getAssetPathList(
+      type: RequestType.common,
+      hasAll: true,
+      filterOption: filter,
+    );
 
-    return filtered.map(MediaItem.fromAsset).toList();
+    if (albums.isEmpty) return [];
+
+    final allPhotos = albums.first;
+    final count = await allPhotos.assetCountAsync;
+    final assets = await allPhotos.getAssetListRange(start: 0, end: count);
+
+    return assets
+        .where((e) => !_keptService.isKept(e.id))
+        .map(MediaItem.fromAsset)
+        .toList();
   }
 
   Future<List<MediaItem>> loadMediaByDate({
     required DateTime date,
     required AssetPathEntity album,
   }) async {
-    final allAssets = await album.getAssetListRange(start: 0, end: 5000);
+    final filter = FilterOptionGroup(
+      createTimeCond: DateTimeCond(
+        min: DateTime(date.year, date.month),
+        max: DateTime(date.year, date.month + 1, 0, 23, 59, 59),
+      ),
+      orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+    );
 
-    final filtered = allAssets
-        .where((e) =>
-            e.createDateTime.year == date.year &&
-            e.createDateTime.month == date.month &&
-            !_keptService.isKept(e.id))
-        .toList()
-      ..sort((a, b) => b.createDateTime.compareTo(a.createDateTime));
+    final albums = await PhotoManager.getAssetPathList(
+      type: RequestType.common,
+      hasAll: true,
+      filterOption: filter,
+    );
 
-    return filtered.map(MediaItem.fromAsset).toList();
+    if (albums.isEmpty) return [];
+
+    final allPhotos = albums.first;
+    final count = await allPhotos.assetCountAsync;
+    final assets = await allPhotos.getAssetListRange(start: 0, end: count);
+
+    return assets
+        .where((e) => !_keptService.isKept(e.id))
+        .map(MediaItem.fromAsset)
+        .toList();
   }
 
   Future<List<MediaItem>> loadAllMedia() async {

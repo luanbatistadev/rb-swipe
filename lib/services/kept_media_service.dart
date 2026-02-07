@@ -50,6 +50,35 @@ class KeptMediaService {
 
   bool isKept(String assetId) => _keptIds.contains(assetId);
 
+  final Set<String> _pendingKeptIds = {};
+
+  void trackKept(String assetId) {
+    _keptIds.add(assetId);
+    _pendingKeptIds.add(assetId);
+  }
+
+  void untrackKept(String assetId) {
+    _keptIds.remove(assetId);
+    _pendingKeptIds.remove(assetId);
+  }
+
+  Future<void> flushPendingKept() async {
+    if (_pendingKeptIds.isEmpty) return;
+
+    final toFlush = List<String>.from(_pendingKeptIds);
+    _pendingKeptIds.clear();
+
+    final batch = _database?.batch();
+    for (final id in toFlush) {
+      batch?.insert(
+        'kept_media',
+        {'asset_id': id},
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
+    await batch?.commit(noResult: true);
+  }
+
   Future<void> addKept(String assetId) async {
     if (_keptIds.contains(assetId)) return;
 

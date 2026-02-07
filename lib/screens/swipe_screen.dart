@@ -17,20 +17,20 @@ class _SwipeAction {
   _SwipeAction(this.item, this.direction);
 }
 
-class HomeScreen extends StatefulWidget {
+class SwipeScreen extends StatefulWidget {
   final DateTime? selectedDate;
   final AssetPathEntity? album;
   final bool isOnThisDay;
 
-  const HomeScreen({super.key, this.selectedDate, this.album, this.isOnThisDay = false});
+  const SwipeScreen({super.key, this.selectedDate, this.album, this.isOnThisDay = false});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<SwipeScreen> createState() => _SwipeScreenState();
 }
 
 enum ScreenState { loading, noPermission, empty, swiping, processing, finished }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _SwipeScreenState extends State<SwipeScreen> {
   final MediaService _mediaService = MediaService();
   final KeptMediaService _keptService = KeptMediaService();
 
@@ -112,7 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _cacheFileSize(item);
         _checkBatchDelete();
       case CardSwiperDirection.right:
-        _keptService.addKept(item.asset.id);
+        _keptService.trackKept(item.asset.id);
         _keptCountNotifier.value++;
       case _:
         break;
@@ -161,6 +161,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _screenStateNotifier.value = ScreenState.processing;
 
+    await _keptService.flushPendingKept();
+
     final toDelete = List<MediaItem>.from(_itemsToDelete);
     final deletedCount = await _mediaService.deleteMultipleMedia(toDelete);
 
@@ -169,9 +171,21 @@ class _HomeScreenState extends State<HomeScreen> {
       _fileSizeCache.remove(item.asset.id);
     }
 
+    final swipedIds = _swipeHistory.map((a) => a.item.asset.id).toSet();
+    _mediaItems.removeWhere((item) => swipedIds.contains(item.asset.id));
+    _swipeHistory.clear();
+    _canUndoNotifier.value = false;
+    _swiperKey = GlobalKey();
+
     _totalCountNotifier.value -= deletedCount;
-    _deletedCountNotifier.value -= deletedCount;
-    _screenStateNotifier.value = ScreenState.swiping;
+    _deletedCountNotifier.value = 0;
+
+    if (_mediaItems.isEmpty) {
+      _screenStateNotifier.value = ScreenState.finished;
+    } else {
+      ThumbnailCache.preloadThumbnails(_mediaItems, 0, 5);
+      _screenStateNotifier.value = ScreenState.swiping;
+    }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -189,7 +203,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _itemsToDelete.remove(item);
         _deletedCountNotifier.value--;
       case CardSwiperDirection.right:
-        _keptService.removeKept(item.asset.id);
+        _keptService.untrackKept(item.asset.id);
         _keptCountNotifier.value--;
       case _:
         break;
@@ -207,6 +221,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _onFinished() async {
+    await _keptService.flushPendingKept();
+
+    if (!mounted) return;
+
     if (_itemsToDelete.isEmpty) {
       _screenStateNotifier.value = ScreenState.finished;
       return;
@@ -275,6 +293,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _keptService.flushPendingKept();
     _screenStateNotifier.dispose();
     _deletedCountNotifier.dispose();
     _keptCountNotifier.dispose();
@@ -367,7 +386,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _getTitle() {
-    if (widget.selectedDate == null) return 'Swipe Cleaner';
+    if (widget.selectedDate == null) return 'Todas as mídias';
     if (widget.isOnThisDay) {
       final now = DateTime.now();
       final yearsAgo = now.year - widget.selectedDate!.year;
