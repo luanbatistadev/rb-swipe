@@ -148,7 +148,8 @@ double _computeLaplacianVariance(Uint8List imageData) {
   if (width < 3 || height < 3) return 999.0;
 
   final buffer = grayscale.buffer.asUint8List();
-  final rowStride = width * 4;
+  final nc = grayscale.numChannels;
+  final rowStride = width * nc;
 
   double sum = 0;
   double sumSq = 0;
@@ -160,12 +161,12 @@ double _computeLaplacianVariance(Uint8List imageData) {
     final bottomOffset = (y + 1) * rowStride;
 
     for (var x = 1; x < width - 1; x++) {
-      final px = x * 4;
+      final px = x * nc;
       final center = buffer[rowOffset + px].toDouble();
       final top = buffer[topOffset + px].toDouble();
       final bottom = buffer[bottomOffset + px].toDouble();
-      final left = buffer[rowOffset + (x - 1) * 4].toDouble();
-      final right = buffer[rowOffset + (x + 1) * 4].toDouble();
+      final left = buffer[rowOffset + (x - 1) * nc].toDouble();
+      final right = buffer[rowOffset + (x + 1) * nc].toDouble();
 
       final laplacian = (4 * center) - top - bottom - left - right;
       sum += laplacian;
