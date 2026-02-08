@@ -7,13 +7,13 @@ const _successColor = Color(0xFF2ED573);
 
 class DeleteConfirmDialog extends StatelessWidget {
   final int count;
-  final int estimatedSize;
+  final Future<int>? sizeFuture;
   final String itemLabel;
 
   const DeleteConfirmDialog({
     super.key,
     required this.count,
-    required this.estimatedSize,
+    this.sizeFuture,
     this.itemLabel = 'arquivos selecionados',
   });
 
@@ -45,27 +45,35 @@ class DeleteConfirmDialog extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            if (estimatedSize > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: _successColor.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.storage, color: _successColor, size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Economize ~${MediaItem.formatSize(estimatedSize)}',
-                      style: const TextStyle(
-                        color: _successColor,
-                        fontWeight: FontWeight.w600,
-                      ),
+            if (sizeFuture != null)
+              FutureBuilder<int>(
+                future: sizeFuture,
+                builder: (_, snapshot) {
+                  if (!snapshot.hasData || snapshot.data! <= 0) {
+                    return const SizedBox.shrink();
+                  }
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _successColor.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                  ],
-                ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.storage, color: _successColor, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Economize ~${MediaItem.formatSize(snapshot.data!)}',
+                          style: const TextStyle(
+                            color: _successColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             const SizedBox(height: 24),
             Row(

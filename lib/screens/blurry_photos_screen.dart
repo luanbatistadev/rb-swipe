@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
+import '../models/media_item.dart';
 import '../services/blur_detection_service.dart';
 import '../services/media_service.dart';
 import '../widgets/delete_confirm_dialog.dart';
@@ -107,6 +108,14 @@ class _BlurryPhotosScreenState extends State<BlurryPhotosScreen> {
     setState(() => _selectedToDelete.clear());
   }
 
+  Future<int> _computeTotalSize(List<MediaItem> items) async {
+    int total = 0;
+    for (final item in items) {
+      total += await item.fileSizeAsync;
+    }
+    return total;
+  }
+
   Future<void> _deleteSelected() async {
     if (_selectedToDelete.isEmpty) return;
 
@@ -115,19 +124,14 @@ class _BlurryPhotosScreenState extends State<BlurryPhotosScreen> {
         .map((p) => p.item)
         .toList();
 
-    int totalSize = 0;
-    for (final item in toDelete) {
-      totalSize += await item.fileSizeAsync;
-    }
-
-    if (!mounted) return;
+    final sizeFuture = _computeTotalSize(toDelete);
 
     final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (_) => DeleteConfirmDialog(
         count: toDelete.length,
-        estimatedSize: totalSize,
+        sizeFuture: sizeFuture,
         itemLabel: 'fotos selecionadas',
       ),
     );

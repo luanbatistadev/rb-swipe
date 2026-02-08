@@ -215,10 +215,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$deletedCount arquivos apagados'),
-        backgroundColor: _successColor,
-      ),
+      SnackBar(content: Text('$deletedCount arquivos apagados'), backgroundColor: _successColor),
     );
   }
 
@@ -385,7 +382,7 @@ class _MediaSwiperState extends State<_MediaSwiper> {
       cardsCount: widget.mediaItems.length,
       numberOfCardsDisplayed: widget.mediaItems.length >= 2 ? 2 : 1,
       backCardOffset: const Offset(0, 30),
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 24),
       isLoop: false,
       duration: const Duration(milliseconds: 200),
       scale: 0.95,
@@ -477,17 +474,14 @@ class _Header extends StatelessWidget {
                   const SizedBox(width: 12),
                   ValueListenableBuilder<int>(
                     valueListenable: keptCountNotifier,
-                    builder: (context, count, _) => _StatBadge(
-                      icon: Icons.favorite,
-                      count: count,
-                      color: _successColor,
-                    ),
+                    builder: (context, count, _) =>
+                        _StatBadge(icon: Icons.favorite, count: count, color: _successColor),
                   ),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -497,7 +491,7 @@ class _Header extends StatelessWidget {
                 'Apagar',
                 style: TextStyle(color: Colors.red.withValues(alpha: 0.7), fontSize: 12),
               ),
-              const SizedBox(width: 24),
+              const SizedBox(width: 48),
               Text(
                 'Manter',
                 style: TextStyle(color: Colors.green.withValues(alpha: 0.7), fontSize: 12),
@@ -506,6 +500,7 @@ class _Header extends StatelessWidget {
               Icon(Icons.arrow_forward, color: Colors.green.withValues(alpha: 0.7), size: 16),
             ],
           ),
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -712,11 +707,7 @@ class _DeleteDialog extends StatelessWidget {
   final int estimatedSize;
   final bool isFinal;
 
-  const _DeleteDialog({
-    required this.count,
-    required this.estimatedSize,
-    required this.isFinal,
-  });
+  const _DeleteDialog({required this.count, required this.estimatedSize, required this.isFinal});
 
   @override
   Widget build(BuildContext context) {
@@ -766,10 +757,7 @@ class _DeleteDialog extends StatelessWidget {
                     const SizedBox(width: 8),
                     Text(
                       'Economize ~${MediaItem.formatSize(estimatedSize)}',
-                      style: const TextStyle(
-                        color: _successColor,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: const TextStyle(color: _successColor, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),

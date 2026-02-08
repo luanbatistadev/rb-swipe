@@ -113,6 +113,14 @@ class _ScreenshotsScreenState extends State<ScreenshotsScreen> {
     });
   }
 
+  Future<int> _computeTotalSize(List<MediaItem> items) async {
+    int total = 0;
+    for (final item in items) {
+      total += await item.fileSizeAsync;
+    }
+    return total;
+  }
+
   Future<void> _deleteSelected() async {
     if (_selectedToDelete.isEmpty) return;
 
@@ -121,19 +129,14 @@ class _ScreenshotsScreenState extends State<ScreenshotsScreen> {
         .where((item) => _selectedToDelete.contains(item.asset.id))
         .toList();
 
-    int totalSize = 0;
-    for (final item in toDelete) {
-      totalSize += await item.fileSizeAsync;
-    }
-
-    if (!mounted) return;
+    final sizeFuture = _computeTotalSize(toDelete);
 
     final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (_) => DeleteConfirmDialog(
         count: toDelete.length,
-        estimatedSize: totalSize,
+        sizeFuture: sizeFuture,
         itemLabel: 'screenshots selecionados',
       ),
     );
