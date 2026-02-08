@@ -7,6 +7,8 @@ import 'package:photo_manager/photo_manager.dart';
 import '../models/media_item.dart';
 import '../services/media_service.dart';
 import '../services/screenshot_detector_service.dart';
+import '../widgets/delete_confirm_dialog.dart';
+import '../widgets/image_viewer.dart';
 
 const _backgroundColor = Color(0xFF0f0f1a);
 const _cardColor = Color(0xFF1a1a2e);
@@ -22,13 +24,13 @@ class ScreenshotsScreen extends StatefulWidget {
 }
 
 class _ScreenshotsScreenState extends State<ScreenshotsScreen> {
-  final ScreenshotDetectorService _detector = ScreenshotDetectorService();
-  final MediaService _mediaService = MediaService();
+  final _detector = ScreenshotDetectorService();
+  final _mediaService = MediaService();
+  final Set<String> _selectedToDelete = {};
 
   bool _isScanning = true;
   bool _isDeleting = false;
   Map<ScreenshotAge, ScreenshotGroup> _groups = {};
-  final Set<String> _selectedToDelete = {};
   int _progress = 0;
   int _total = 0;
   String? _error;
@@ -62,19 +64,12 @@ class _ScreenshotsScreenState extends State<ScreenshotsScreen> {
     _subscription = _detector.detectScreenshotsStream().listen(
       (event) {
         if (!mounted) return;
-
         setState(() {
           _progress = event.current;
           _total = event.total;
           _groups = event.groups;
-
-          if (event.isComplete) {
-            _isScanning = false;
-          }
-
-          if (event.error != null) {
-            _error = event.error;
-          }
+          if (event.isComplete) _isScanning = false;
+          if (event.error != null) _error = event.error;
         });
       },
       onError: (e) {
@@ -88,7 +83,6 @@ class _ScreenshotsScreenState extends State<ScreenshotsScreen> {
   }
 
   List<ScreenshotGroup> get _sortedGroups {
-    // Sort by age (oldest first for cleanup)
     final sorted = _groups.values.toList();
     sorted.sort((a, b) => b.age.index.compareTo(a.age.index));
     return sorted;
@@ -96,10 +90,9 @@ class _ScreenshotsScreenState extends State<ScreenshotsScreen> {
 
   void _toggleSelection(MediaItem item) {
     setState(() {
-      if (_selectedToDelete.contains(item.asset.id)) {
-        _selectedToDelete.remove(item.asset.id);
-      } else {
-        _selectedToDelete.add(item.asset.id);
+      final id = item.asset.id;
+      if (!_selectedToDelete.remove(id)) {
+        _selectedToDelete.add(id);
       }
     });
   }
@@ -123,32 +116,84 @@ class _ScreenshotsScreenState extends State<ScreenshotsScreen> {
   Future<void> _deleteSelected() async {
     if (_selectedToDelete.isEmpty) return;
 
-    setState(() => _isDeleting = true);
+    final toDelete = _groups.values
+        .expand((g) => g.items)
+        .where((item) => _selectedToDelete.contains(item.asset.id))
+        .toList();
 
-    final toDelete = <MediaItem>[];
-    for (final group in _groups.values) {
-      for (final item in group.items) {
-        if (_selectedToDelete.contains(item.asset.id)) {
-          toDelete.add(item);
-        }
-      }
+    int totalSize = 0;
+    for (final item in toDelete) {
+      totalSize += await item.fileSizeAsync;
     }
+
+    if (!mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => DeleteConfirmDialog(
+        count: toDelete.length,
+        estimatedSize: totalSize,
+        itemLabel: 'screenshots selecionados',
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isDeleting = true);
 
     final deleted = await _mediaService.deleteMultipleMedia(toDelete);
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$deleted screenshots apagados'),
-          backgroundColor: _successColor,
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$deleted screenshots apagados'),
+        backgroundColor: _successColor,
+      ),
+    );
+    _scan();
+  }
+
+  void _openViewer(List<MediaItem> items, int initialIndex) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ImageViewer(
+          items: items,
+          initialIndex: initialIndex,
+          selectedToDelete: _selectedToDelete,
+          onToggleSelection: _toggleSelection,
+          accentColor: _accentColor,
         ),
-      );
-      _scan();
-    }
+      ),
+    ).then((_) => setState(() {}));
   }
 
   @override
   Widget build(BuildContext context) {
+    final Widget body;
+
+    if (_isDeleting) {
+      body = const _DeletingWidget();
+    } else if (_error != null && _groups.isEmpty) {
+      body = _ErrorWidget(error: _error!, onRetry: _scan);
+    } else if (!_isScanning && _groups.isEmpty) {
+      body = const _EmptyWidget();
+    } else {
+      body = _ScreenshotsList(
+        groups: _sortedGroups,
+        selectedToDelete: _selectedToDelete,
+        onToggleSelection: _toggleSelection,
+        onSelectAll: _selectAllInGroup,
+        onDeselectAll: _deselectAllInGroup,
+        onOpenViewer: _openViewer,
+        isScanning: _isScanning,
+        progress: _progress,
+        total: _total,
+      );
+    }
+
     return Scaffold(
       backgroundColor: _backgroundColor,
       appBar: AppBar(
@@ -174,33 +219,7 @@ class _ScreenshotsScreenState extends State<ScreenshotsScreen> {
             ),
         ],
       ),
-      body: _buildBody(),
-    );
-  }
-
-  Widget _buildBody() {
-    if (_isDeleting) {
-      return const _DeletingWidget();
-    }
-
-    if (_error != null && _groups.isEmpty) {
-      return _ErrorWidget(error: _error!, onRetry: _scan);
-    }
-
-    if (!_isScanning && _groups.isEmpty) {
-      return const _EmptyWidget();
-    }
-
-    // Show list with groups (even while scanning)
-    return _ScreenshotsList(
-      groups: _sortedGroups,
-      selectedToDelete: _selectedToDelete,
-      onToggleSelection: _toggleSelection,
-      onSelectAll: _selectAllInGroup,
-      onDeselectAll: _deselectAllInGroup,
-      isScanning: _isScanning,
-      progress: _progress,
-      total: _total,
+      body: body,
     );
   }
 }
@@ -294,6 +313,7 @@ class _ScreenshotsList extends StatelessWidget {
   final void Function(MediaItem) onToggleSelection;
   final void Function(ScreenshotGroup) onSelectAll;
   final void Function(ScreenshotGroup) onDeselectAll;
+  final void Function(List<MediaItem>, int) onOpenViewer;
   final bool isScanning;
   final int progress;
   final int total;
@@ -304,6 +324,7 @@ class _ScreenshotsList extends StatelessWidget {
     required this.onToggleSelection,
     required this.onSelectAll,
     required this.onDeselectAll,
+    required this.onOpenViewer,
     required this.isScanning,
     required this.progress,
     required this.total,
@@ -311,7 +332,6 @@ class _ScreenshotsList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // +1 for summary, +1 for scanning indicator if scanning
     final itemCount = groups.length + 1 + (isScanning ? 1 : 0);
 
     return ListView.builder(
@@ -319,10 +339,12 @@ class _ScreenshotsList extends StatelessWidget {
       itemCount: itemCount,
       itemBuilder: (context, index) {
         if (index == 0) {
-          return _buildSummary();
+          return _ScreenshotsSummary(
+            groups: groups,
+            isScanning: isScanning,
+          );
         }
 
-        // Last item is scanning indicator
         if (isScanning && index == itemCount - 1) {
           return _ScanningIndicator(progress: progress, total: total);
         }
@@ -333,12 +355,24 @@ class _ScreenshotsList extends StatelessWidget {
           onToggleSelection: onToggleSelection,
           onSelectAll: onSelectAll,
           onDeselectAll: onDeselectAll,
+          onOpenViewer: onOpenViewer,
         );
       },
     );
   }
+}
 
-  Widget _buildSummary() {
+class _ScreenshotsSummary extends StatelessWidget {
+  final List<ScreenshotGroup> groups;
+  final bool isScanning;
+
+  const _ScreenshotsSummary({
+    required this.groups,
+    required this.isScanning,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final totalScreenshots = groups.fold<int>(0, (sum, g) => sum + g.items.length);
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -439,6 +473,7 @@ class _ScreenshotGroupCard extends StatelessWidget {
   final void Function(MediaItem) onToggleSelection;
   final void Function(ScreenshotGroup) onSelectAll;
   final void Function(ScreenshotGroup) onDeselectAll;
+  final void Function(List<MediaItem>, int) onOpenViewer;
 
   const _ScreenshotGroupCard({
     required this.group,
@@ -446,6 +481,7 @@ class _ScreenshotGroupCard extends StatelessWidget {
     required this.onToggleSelection,
     required this.onSelectAll,
     required this.onDeselectAll,
+    required this.onOpenViewer,
   });
 
   bool get _allSelected => group.items.isNotEmpty && group.items.every((i) => selectedToDelete.contains(i.asset.id));
@@ -503,6 +539,7 @@ class _ScreenshotGroupCard extends StatelessWidget {
                   item: item,
                   isSelected: isSelected,
                   onTap: () => onToggleSelection(item),
+                  onOpenViewer: () => onOpenViewer(group.items, index),
                 );
               },
             ),
@@ -518,11 +555,13 @@ class _ScreenshotThumb extends StatefulWidget {
   final MediaItem item;
   final bool isSelected;
   final VoidCallback onTap;
+  final VoidCallback onOpenViewer;
 
   const _ScreenshotThumb({
     required this.item,
     required this.isSelected,
     required this.onTap,
+    required this.onOpenViewer,
   });
 
   @override
@@ -544,9 +583,7 @@ class _ScreenshotThumbState extends State<_ScreenshotThumb> {
           .thumbnailDataWithSize(const ThumbnailSize(200, 200), quality: 80)
           .timeout(const Duration(seconds: 5), onTimeout: () => null);
       if (mounted && thumb != null) setState(() => _thumbnail = thumb);
-    } catch (_) {
-      // Ignore thumbnail errors
-    }
+    } catch (_) {}
   }
 
   @override
@@ -575,6 +612,21 @@ class _ScreenshotThumbState extends State<_ScreenshotThumb> {
                       child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
                     ),
             ),
+            Positioned(
+              bottom: 4,
+              right: 4,
+              child: GestureDetector(
+                onTap: widget.onOpenViewer,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.fullscreen, color: Colors.white, size: 16),
+                ),
+              ),
+            ),
             if (widget.isSelected)
               Container(
                 decoration: BoxDecoration(
@@ -591,3 +643,4 @@ class _ScreenshotThumbState extends State<_ScreenshotThumb> {
     );
   }
 }
+

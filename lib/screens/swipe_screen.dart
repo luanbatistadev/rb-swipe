@@ -9,6 +9,10 @@ import '../widgets/action_buttons.dart';
 import '../widgets/media_card.dart';
 
 const _deleteBatchSize = 20;
+const _backgroundColor = Color(0xFF0f0f1a);
+const _accentColor = Color(0xFF6C5CE7);
+const _deleteColor = Color(0xFFFF4757);
+const _successColor = Color(0xFF2ED573);
 
 class _SwipeAction {
   final MediaItem item;
@@ -31,8 +35,8 @@ class SwipeScreen extends StatefulWidget {
 enum ScreenState { loading, noPermission, empty, swiping, processing, finished }
 
 class _SwipeScreenState extends State<SwipeScreen> {
-  final MediaService _mediaService = MediaService();
-  final KeptMediaService _keptService = KeptMediaService();
+  final _mediaService = MediaService();
+  final _keptService = KeptMediaService();
 
   final ValueNotifier<ScreenState> _screenStateNotifier = ValueNotifier(ScreenState.loading);
   final ValueNotifier<int> _deletedCountNotifier = ValueNotifier(0);
@@ -55,6 +59,17 @@ class _SwipeScreenState extends State<SwipeScreen> {
     _initialize();
   }
 
+  @override
+  void dispose() {
+    _keptService.flushPendingKept();
+    _screenStateNotifier.dispose();
+    _deletedCountNotifier.dispose();
+    _keptCountNotifier.dispose();
+    _totalCountNotifier.dispose();
+    _canUndoNotifier.dispose();
+    super.dispose();
+  }
+
   Future<void> _initialize() async {
     _screenStateNotifier.value = ScreenState.loading;
     _itemsToDelete.clear();
@@ -68,7 +83,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
     final hasPermission = await _mediaService.requestPermission();
 
     if (!hasPermission) {
-      _errorMessage = 'Permissão de acesso à galeria negada';
+      _errorMessage = 'Permissao de acesso a galeria negada';
       _screenStateNotifier.value = ScreenState.noPermission;
       return;
     }
@@ -95,10 +110,19 @@ class _SwipeScreenState extends State<SwipeScreen> {
 
     if (_mediaItems.isEmpty) {
       _screenStateNotifier.value = ScreenState.empty;
-    } else {
-      ThumbnailCache.preloadThumbnails(_mediaItems, 0, 5);
-      _screenStateNotifier.value = ScreenState.swiping;
+      return;
     }
+
+    ThumbnailCache.preloadThumbnails(_mediaItems, 0, 5);
+    _screenStateNotifier.value = ScreenState.swiping;
+  }
+
+  int get _estimatedDeleteSize {
+    int total = 0;
+    for (final item in _itemsToDelete) {
+      total += _fileSizeCache[item.asset.id] ?? 0;
+    }
+    return total;
   }
 
   void _onSwipe(CardSwiperDirection direction, MediaItem item) {
@@ -127,25 +151,21 @@ class _SwipeScreenState extends State<SwipeScreen> {
 
   void _checkBatchDelete() {
     if (_isShowingBatchDialog) return;
-    if (_itemsToDelete.length % _deleteBatchSize != 0) return;
     if (_itemsToDelete.isEmpty) return;
+    if (_itemsToDelete.length % _deleteBatchSize != 0) return;
 
     _isShowingBatchDialog = true;
-    _showBatchDeleteDialog();
+    _showDeleteDialog(isFinal: false);
   }
 
-  Future<void> _showBatchDeleteDialog() async {
-    int totalSize = 0;
-    for (final item in _itemsToDelete) {
-      totalSize += _fileSizeCache[item.asset.id] ?? 0;
-    }
-
+  Future<void> _showDeleteDialog({required bool isFinal}) async {
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => _BatchDeleteDialog(
+      builder: (_) => _DeleteDialog(
         count: _itemsToDelete.length,
-        estimatedSize: totalSize,
+        estimatedSize: _estimatedDeleteSize,
+        isFinal: isFinal,
       ),
     );
 
@@ -153,6 +173,11 @@ class _SwipeScreenState extends State<SwipeScreen> {
 
     if (result == true) {
       await _deleteCurrentBatch();
+      return;
+    }
+
+    if (isFinal) {
+      _screenStateNotifier.value = ScreenState.finished;
     }
   }
 
@@ -187,14 +212,14 @@ class _SwipeScreenState extends State<SwipeScreen> {
       _screenStateNotifier.value = ScreenState.swiping;
     }
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$deletedCount arquivos apagados'),
-          backgroundColor: const Color(0xFF2ED573),
-        ),
-      );
-    }
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$deletedCount arquivos apagados'),
+        backgroundColor: _successColor,
+      ),
+    );
   }
 
   void _onUndo(CardSwiperDirection direction, MediaItem item) {
@@ -212,17 +237,8 @@ class _SwipeScreenState extends State<SwipeScreen> {
     _canUndoNotifier.value = _swipeHistory.isNotEmpty;
   }
 
-  void _onUndoPressed() {
-    _swiperKey.currentState?.undo();
-  }
-
-  void _onNeedMoreItems(int currentIndex) {
-    ThumbnailCache.preloadThumbnails(_mediaItems, currentIndex, 5);
-  }
-
   Future<void> _onFinished() async {
     await _keptService.flushPendingKept();
-
     if (!mounted) return;
 
     if (_itemsToDelete.isEmpty) {
@@ -230,82 +246,27 @@ class _SwipeScreenState extends State<SwipeScreen> {
       return;
     }
 
-    int totalSize = 0;
-    for (final item in _itemsToDelete) {
-      totalSize += _fileSizeCache[item.asset.id] ?? 0;
-    }
-
-    final result = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => _FinalDeleteDialog(
-        count: _itemsToDelete.length,
-        estimatedSize: totalSize,
-      ),
-    );
-
-    if (result != true) {
-      _screenStateNotifier.value = ScreenState.finished;
-      return;
-    }
-
-    _screenStateNotifier.value = ScreenState.processing;
-
-    final countToDelete = _itemsToDelete.length;
-    await _mediaService.deleteMultipleMedia(_itemsToDelete);
-    _itemsToDelete.clear();
-    _fileSizeCache.clear();
-
-    _totalCountNotifier.value -= countToDelete;
-    _deletedCountNotifier.value -= countToDelete;
-    _screenStateNotifier.value = ScreenState.finished;
+    _showDeleteDialog(isFinal: true);
   }
 
   Future<void> _onDeleteBadgeTap() async {
     if (_itemsToDelete.isEmpty) return;
+    _showDeleteDialog(isFinal: false);
+  }
 
-    int totalSize = 0;
-    for (final item in _itemsToDelete) {
-      totalSize += _fileSizeCache[item.asset.id] ?? 0;
+  String get _title {
+    if (widget.selectedDate == null) return 'Todas as midias';
+    if (widget.isOnThisDay) {
+      final yearsAgo = DateTime.now().year - widget.selectedDate!.year;
+      return '$yearsAgo ${yearsAgo == 1 ? 'ano' : 'anos'} atras';
     }
-
-    final result = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => _BatchDeleteDialog(
-        count: _itemsToDelete.length,
-        estimatedSize: totalSize,
-      ),
-    );
-
-    if (result == true) {
-      await _deleteCurrentBatch();
-    }
-  }
-
-  void _onDeletePressed() {
-    _swiperKey.currentState?.swipeLeft();
-  }
-
-  void _onKeepPressed() {
-    _swiperKey.currentState?.swipeRight();
-  }
-
-  @override
-  void dispose() {
-    _keptService.flushPendingKept();
-    _screenStateNotifier.dispose();
-    _deletedCountNotifier.dispose();
-    _keptCountNotifier.dispose();
-    _totalCountNotifier.dispose();
-    _canUndoNotifier.dispose();
-    super.dispose();
+    return '${fullMonthNames[widget.selectedDate!.month - 1]} / ${widget.selectedDate!.year}';
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0f0f1a),
+      backgroundColor: _backgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -321,7 +282,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
               totalCountNotifier: _totalCountNotifier,
               deletedCountNotifier: _deletedCountNotifier,
               keptCountNotifier: _keptCountNotifier,
-              title: _getTitle(),
+              title: _title,
               onDeleteTap: _onDeleteBadgeTap,
             ),
             Expanded(
@@ -349,7 +310,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
                         mediaItems: _mediaItems,
                         onSwipe: _onSwipe,
                         onUndo: _onUndo,
-                        onNeedMoreItems: _onNeedMoreItems,
+                        onNeedMoreItems: (i) => ThumbnailCache.preloadThumbnails(_mediaItems, i, 5),
                         onFinished: _onFinished,
                       );
                   }
@@ -359,40 +320,28 @@ class _SwipeScreenState extends State<SwipeScreen> {
             ValueListenableBuilder<ScreenState>(
               valueListenable: _screenStateNotifier,
               builder: (context, state, _) {
-                if (state == ScreenState.swiping) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 40),
-                    child: ValueListenableBuilder<bool>(
-                      valueListenable: _canUndoNotifier,
-                      builder: (context, canUndo, _) {
-                        return ActionButtons(
-                          onDelete: _onDeletePressed,
-                          onKeep: _onKeepPressed,
-                          onUndo: _onUndoPressed,
-                          canUndo: canUndo,
-                          isLoading: false,
-                        );
-                      },
-                    ),
-                  );
-                }
-                return const SizedBox.shrink();
+                if (state != ScreenState.swiping) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 40),
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _canUndoNotifier,
+                    builder: (context, canUndo, _) {
+                      return ActionButtons(
+                        onDelete: () => _swiperKey.currentState?.swipeLeft(),
+                        onKeep: () => _swiperKey.currentState?.swipeRight(),
+                        onUndo: () => _swiperKey.currentState?.undo(),
+                        canUndo: canUndo,
+                        isLoading: false,
+                      );
+                    },
+                  ),
+                );
               },
             ),
           ],
         ),
       ),
     );
-  }
-
-  String _getTitle() {
-    if (widget.selectedDate == null) return 'Todas as mídias';
-    if (widget.isOnThisDay) {
-      final now = DateTime.now();
-      final yearsAgo = now.year - widget.selectedDate!.year;
-      return '$yearsAgo ${yearsAgo == 1 ? 'ano' : 'anos'} atrás';
-    }
-    return '${fullMonthNames[widget.selectedDate!.month - 1]} / ${widget.selectedDate!.year}';
   }
 }
 
@@ -431,40 +380,35 @@ class _MediaSwiperState extends State<_MediaSwiper> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: CardSwiper(
-        controller: _controller,
-        cardsCount: widget.mediaItems.length,
-        numberOfCardsDisplayed: widget.mediaItems.length >= 2 ? 2 : 1,
-        backCardOffset: const Offset(0, 30),
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        isLoop: false,
-        duration: const Duration(milliseconds: 200),
-        scale: 0.95,
-        onSwipe: (previousIndex, currentIndex, direction) {
-          if (previousIndex < widget.mediaItems.length) {
-            widget.onSwipe(direction, widget.mediaItems[previousIndex]);
-          }
-          if (currentIndex != null && currentIndex < widget.mediaItems.length) {
-            widget.onNeedMoreItems(currentIndex);
-          }
-          return true;
-        },
-        onUndo: (previousIndex, currentIndex, direction) {
-          if (currentIndex < widget.mediaItems.length) {
-            widget.onUndo(direction, widget.mediaItems[currentIndex]);
-          }
-          return true;
-        },
-        onEnd: widget.onFinished,
-        cardBuilder: (context, index, horizontalThreshold, verticalThreshold) {
-          if (index >= widget.mediaItems.length) {
-            return const SizedBox.shrink();
-          }
-          return MediaCard(mediaItem: widget.mediaItems[index]);
-        },
-      ),
+    return CardSwiper(
+      controller: _controller,
+      cardsCount: widget.mediaItems.length,
+      numberOfCardsDisplayed: widget.mediaItems.length >= 2 ? 2 : 1,
+      backCardOffset: const Offset(0, 30),
+      padding: const EdgeInsets.only(bottom: 8),
+      isLoop: false,
+      duration: const Duration(milliseconds: 200),
+      scale: 0.95,
+      onSwipe: (previousIndex, currentIndex, direction) {
+        if (previousIndex < widget.mediaItems.length) {
+          widget.onSwipe(direction, widget.mediaItems[previousIndex]);
+        }
+        if (currentIndex != null && currentIndex < widget.mediaItems.length) {
+          widget.onNeedMoreItems(currentIndex);
+        }
+        return true;
+      },
+      onUndo: (previousIndex, currentIndex, direction) {
+        if (currentIndex < widget.mediaItems.length) {
+          widget.onUndo(direction, widget.mediaItems[currentIndex]);
+        }
+        return true;
+      },
+      onEnd: widget.onFinished,
+      cardBuilder: (context, index, horizontalThreshold, verticalThreshold) {
+        if (index >= widget.mediaItems.length) return const SizedBox.shrink();
+        return MediaCard(mediaItem: widget.mediaItems[index]);
+      },
     );
   }
 }
@@ -486,7 +430,7 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         children: [
@@ -525,7 +469,7 @@ class _Header extends StatelessWidget {
                       child: _StatBadge(
                         icon: Icons.delete,
                         count: count,
-                        color: const Color(0xFFFF4757),
+                        color: _deleteColor,
                         isClickable: count > 0 && onDeleteTap != null,
                       ),
                     ),
@@ -536,7 +480,7 @@ class _Header extends StatelessWidget {
                     builder: (context, count, _) => _StatBadge(
                       icon: Icons.favorite,
                       count: count,
-                      color: const Color(0xFF2ED573),
+                      color: _successColor,
                     ),
                   ),
                 ],
@@ -588,6 +532,7 @@ class _LoadingWidget extends StatelessWidget {
 
 class _ProcessingWidget extends StatelessWidget {
   final int count;
+
   const _ProcessingWidget({required this.count});
 
   @override
@@ -626,12 +571,12 @@ class _PermissionError extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             const Text(
-              'Permissão Necessária',
+              'Permissao Necessaria',
               style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             Text(
-              errorMessage ?? 'Precisamos de acesso à sua galeria.',
+              errorMessage ?? 'Precisamos de acesso a sua galeria.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 16),
             ),
@@ -641,7 +586,7 @@ class _PermissionError extends StatelessWidget {
               icon: const Icon(Icons.refresh),
               label: const Text('Tentar Novamente'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6C5CE7),
+                backgroundColor: _accentColor,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
@@ -678,7 +623,7 @@ class _FinishedScreen extends StatelessWidget {
             Icon(Icons.celebration, size: 80, color: Colors.white.withValues(alpha: 0.3)),
             const SizedBox(height: 24),
             const Text(
-              'Tudo Limpo! 🎉',
+              'Tudo Limpo!',
               style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
@@ -689,7 +634,7 @@ class _FinishedScreen extends StatelessWidget {
                 final keptCount = keptCountNotifier.value;
                 final message = deletedCount > 0
                     ? '$deletedCount arquivos apagados\n$keptCount arquivos mantidos'
-                    : 'Você não tem mais fotos ou vídeos.';
+                    : 'Voce nao tem mais fotos ou videos.';
                 return Text(
                   message,
                   textAlign: TextAlign.center,
@@ -703,7 +648,7 @@ class _FinishedScreen extends StatelessWidget {
               icon: const Icon(Icons.refresh),
               label: const Text('Revisar Novamente'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6C5CE7),
+                backgroundColor: _accentColor,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
@@ -713,7 +658,7 @@ class _FinishedScreen extends StatelessWidget {
             TextButton(
               onPressed: onClose,
               style: TextButton.styleFrom(foregroundColor: Colors.white70),
-              child: const Text('Escolher outro período'),
+              child: const Text('Escolher outro periodo'),
             ),
           ],
         ),
@@ -762,30 +707,25 @@ class _StatBadge extends StatelessWidget {
   }
 }
 
-class _FinalDeleteDialog extends StatelessWidget {
+class _DeleteDialog extends StatelessWidget {
   final int count;
   final int estimatedSize;
+  final bool isFinal;
 
-  const _FinalDeleteDialog({required this.count, required this.estimatedSize});
-
-  String _formatSize(int bytes) {
-    const kb = 1024;
-    const mb = kb * 1024;
-    const gb = mb * 1024;
-
-    if (bytes >= gb) {
-      return '${(bytes / gb).toStringAsFixed(1)} GB';
-    } else if (bytes >= mb) {
-      return '${(bytes / mb).toStringAsFixed(1)} MB';
-    } else if (bytes >= kb) {
-      return '${(bytes / kb).toStringAsFixed(1)} KB';
-    } else {
-      return '$bytes B';
-    }
-  }
+  const _DeleteDialog({
+    required this.count,
+    required this.estimatedSize,
+    required this.isFinal,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final iconData = isFinal ? Icons.check_circle : Icons.delete_sweep;
+    final iconColor = isFinal ? _successColor : _deleteColor;
+    final title = isFinal ? 'Revisao concluida!' : '$count arquivos selecionados';
+    final subtitle = isFinal ? '$count arquivos para apagar' : 'Deseja apagar agora ou continuar?';
+    final cancelLabel = isFinal ? 'Cancelar' : 'Continuar';
+
     return Dialog(
       backgroundColor: const Color(0xFF1a1a2e),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -797,128 +737,14 @@ class _FinalDeleteDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFF2ED573).withValues(alpha: 0.2),
+                color: iconColor.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.check_circle, color: Color(0xFF2ED573), size: 40),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Revisão concluída!',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '$count arquivos para apagar',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
-            ),
-            const SizedBox(height: 16),
-            if (estimatedSize > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2ED573).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.storage, color: Color(0xFF2ED573), size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Economize ~${_formatSize(estimatedSize)}',
-                      style: const TextStyle(
-                        color: Color(0xFF2ED573),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white70,
-                      side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text('Cancelar'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFF4757),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text('Apagar'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BatchDeleteDialog extends StatelessWidget {
-  final int count;
-  final int estimatedSize;
-
-  const _BatchDeleteDialog({required this.count, required this.estimatedSize});
-
-  String _formatSize(int bytes) {
-    const kb = 1024;
-    const mb = kb * 1024;
-    const gb = mb * 1024;
-
-    if (bytes >= gb) {
-      return '${(bytes / gb).toStringAsFixed(1)} GB';
-    } else if (bytes >= mb) {
-      return '${(bytes / mb).toStringAsFixed(1)} MB';
-    } else if (bytes >= kb) {
-      return '${(bytes / kb).toStringAsFixed(1)} KB';
-    } else {
-      return '$bytes B';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: const Color(0xFF1a1a2e),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFF4757).withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.delete_sweep, color: Color(0xFFFF4757), size: 40),
+              child: Icon(iconData, color: iconColor, size: 40),
             ),
             const SizedBox(height: 20),
             Text(
-              '$count arquivos selecionados',
+              title,
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 20,
@@ -930,27 +756,27 @@ class _BatchDeleteDialog extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2ED573).withValues(alpha: 0.2),
+                  color: _successColor.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.storage, color: Color(0xFF2ED573), size: 18),
+                    const Icon(Icons.storage, color: _successColor, size: 18),
                     const SizedBox(width: 8),
                     Text(
-                      'Economize ~${_formatSize(estimatedSize)}',
+                      'Economize ~${MediaItem.formatSize(estimatedSize)}',
                       style: const TextStyle(
-                        color: Color(0xFF2ED573),
+                        color: _successColor,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
               ),
-            const SizedBox(height: 8),
+            if (!isFinal) const SizedBox(height: 8),
             Text(
-              'Deseja apagar agora ou continuar?',
+              subtitle,
               style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
               textAlign: TextAlign.center,
             ),
@@ -966,7 +792,7 @@ class _BatchDeleteDialog extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: const Text('Continuar'),
+                    child: Text(cancelLabel),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -974,7 +800,7 @@ class _BatchDeleteDialog extends StatelessWidget {
                   child: ElevatedButton(
                     onPressed: () => Navigator.pop(context, true),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFF4757),
+                      backgroundColor: _deleteColor,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

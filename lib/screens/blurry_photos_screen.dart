@@ -4,9 +4,10 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
-import '../models/media_item.dart';
 import '../services/blur_detection_service.dart';
 import '../services/media_service.dart';
+import '../widgets/delete_confirm_dialog.dart';
+import '../widgets/image_viewer.dart';
 
 const _backgroundColor = Color(0xFF0f0f1a);
 const _cardColor = Color(0xFF1a1a2e);
@@ -88,40 +89,52 @@ class _BlurryPhotosScreenState extends State<BlurryPhotosScreen> {
   }
 
   void _toggleSelection(BlurryPhoto photo) {
+    final id = photo.item.asset.id;
     setState(() {
-      if (_selectedToDelete.contains(photo.item.asset.id)) {
-        _selectedToDelete.remove(photo.item.asset.id);
-      } else {
-        _selectedToDelete.add(photo.item.asset.id);
+      if (!_selectedToDelete.remove(id)) {
+        _selectedToDelete.add(id);
       }
     });
   }
 
   void _selectAll() {
     setState(() {
-      for (final photo in _blurryPhotos) {
-        _selectedToDelete.add(photo.item.asset.id);
-      }
+      _selectedToDelete.addAll(_blurryPhotos.map((p) => p.item.asset.id));
     });
   }
 
   void _deselectAll() {
-    setState(() {
-      _selectedToDelete.clear();
-    });
+    setState(() => _selectedToDelete.clear());
   }
 
   Future<void> _deleteSelected() async {
     if (_selectedToDelete.isEmpty) return;
 
-    setState(() => _isDeleting = true);
+    final toDelete = _blurryPhotos
+        .where((p) => _selectedToDelete.contains(p.item.asset.id))
+        .map((p) => p.item)
+        .toList();
 
-    final toDelete = <MediaItem>[];
-    for (final photo in _blurryPhotos) {
-      if (_selectedToDelete.contains(photo.item.asset.id)) {
-        toDelete.add(photo.item);
-      }
+    int totalSize = 0;
+    for (final item in toDelete) {
+      totalSize += await item.fileSizeAsync;
     }
+
+    if (!mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => DeleteConfirmDialog(
+        count: toDelete.length,
+        estimatedSize: totalSize,
+        itemLabel: 'fotos selecionadas',
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isDeleting = true);
 
     final deleted = await _mediaService.deleteMultipleMedia(toDelete);
 
@@ -142,6 +155,29 @@ class _BlurryPhotosScreenState extends State<BlurryPhotosScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final Widget body;
+
+    if (_isDeleting) {
+      body = const _DeletingWidget();
+    } else if (_error != null && _blurryPhotos.isEmpty) {
+      body = _ErrorWidget(error: _error!, onRetry: _scan);
+    } else if (!_isScanning && _blurryPhotos.isEmpty) {
+      body = const _EmptyWidget();
+    } else {
+      body = _BlurryPhotosList(
+        photos: _blurryPhotos,
+        selectedToDelete: _selectedToDelete,
+        onToggleSelection: _toggleSelection,
+        onSelectAll: _selectAll,
+        onDeselectAll: _deselectAll,
+        onOpenViewer: _openViewer,
+        allSelected: _allSelected,
+        isScanning: _isScanning,
+        progress: _progress,
+        total: _total,
+      );
+    }
+
     return Scaffold(
       backgroundColor: _backgroundColor,
       appBar: AppBar(
@@ -167,34 +203,30 @@ class _BlurryPhotosScreenState extends State<BlurryPhotosScreen> {
             ),
         ],
       ),
-      body: _buildBody(),
+      body: body,
     );
   }
 
-  Widget _buildBody() {
-    if (_isDeleting) {
-      return const _DeletingWidget();
-    }
-
-    if (_error != null && _blurryPhotos.isEmpty) {
-      return _ErrorWidget(error: _error!, onRetry: _scan);
-    }
-
-    if (!_isScanning && _blurryPhotos.isEmpty) {
-      return const _EmptyWidget();
-    }
-
-    return _BlurryPhotosList(
-      photos: _blurryPhotos,
-      selectedToDelete: _selectedToDelete,
-      onToggleSelection: _toggleSelection,
-      onSelectAll: _selectAll,
-      onDeselectAll: _deselectAll,
-      allSelected: _allSelected,
-      isScanning: _isScanning,
-      progress: _progress,
-      total: _total,
-    );
+  void _openViewer(int initialIndex) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ImageViewer(
+          items: _blurryPhotos.map((p) => p.item).toList(),
+          initialIndex: initialIndex,
+          selectedToDelete: _selectedToDelete,
+          onToggleSelection: (item) {
+            final id = item.asset.id;
+            setState(() {
+              if (!_selectedToDelete.remove(id)) {
+                _selectedToDelete.add(id);
+              }
+            });
+          },
+          accentColor: _accentColor,
+        ),
+      ),
+    ).then((_) => setState(() {}));
   }
 }
 
@@ -287,6 +319,7 @@ class _BlurryPhotosList extends StatelessWidget {
   final void Function(BlurryPhoto) onToggleSelection;
   final VoidCallback onSelectAll;
   final VoidCallback onDeselectAll;
+  final void Function(int) onOpenViewer;
   final bool allSelected;
   final bool isScanning;
   final int progress;
@@ -298,6 +331,7 @@ class _BlurryPhotosList extends StatelessWidget {
     required this.onToggleSelection,
     required this.onSelectAll,
     required this.onDeselectAll,
+    required this.onOpenViewer,
     required this.allSelected,
     required this.isScanning,
     required this.progress,
@@ -308,7 +342,14 @@ class _BlurryPhotosList extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _buildHeader(),
+        _BlurryPhotosHeader(
+          photoCount: photos.length,
+          isScanning: isScanning,
+          allSelected: allSelected,
+          hasPhotos: photos.isNotEmpty,
+          onSelectAll: onSelectAll,
+          onDeselectAll: onDeselectAll,
+        ),
         if (isScanning) _ScanningIndicator(progress: progress, total: total),
         Expanded(
           child: GridView.builder(
@@ -327,6 +368,7 @@ class _BlurryPhotosList extends StatelessWidget {
                 photo: photo,
                 isSelected: isSelected,
                 onTap: () => onToggleSelection(photo),
+                onOpenViewer: () => onOpenViewer(index),
               );
             },
           ),
@@ -334,8 +376,27 @@ class _BlurryPhotosList extends StatelessWidget {
       ],
     );
   }
+}
 
-  Widget _buildHeader() {
+class _BlurryPhotosHeader extends StatelessWidget {
+  final int photoCount;
+  final bool isScanning;
+  final bool allSelected;
+  final bool hasPhotos;
+  final VoidCallback onSelectAll;
+  final VoidCallback onDeselectAll;
+
+  const _BlurryPhotosHeader({
+    required this.photoCount,
+    required this.isScanning,
+    required this.allSelected,
+    required this.hasPhotos,
+    required this.onSelectAll,
+    required this.onDeselectAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
@@ -355,7 +416,7 @@ class _BlurryPhotosList extends StatelessWidget {
                   const Icon(Icons.blur_on, color: _accentColor, size: 20),
                   const SizedBox(width: 8),
                   Text(
-                    '${photos.length}${isScanning ? '+' : ''} fotos borradas',
+                    '$photoCount${isScanning ? '+' : ''} fotos borradas',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
@@ -374,7 +435,7 @@ class _BlurryPhotosList extends StatelessWidget {
               ),
             ],
           ),
-          if (photos.isNotEmpty)
+          if (hasPhotos)
             TextButton(
               onPressed: allSelected ? onDeselectAll : onSelectAll,
               child: Text(
@@ -438,11 +499,13 @@ class _BlurryPhotoThumb extends StatefulWidget {
   final BlurryPhoto photo;
   final bool isSelected;
   final VoidCallback onTap;
+  final VoidCallback onOpenViewer;
 
   const _BlurryPhotoThumb({
     required this.photo,
     required this.isSelected,
     required this.onTap,
+    required this.onOpenViewer,
   });
 
   @override
@@ -524,6 +587,21 @@ class _BlurryPhotoThumbState extends State<_BlurryPhotoThumb> {
                 ),
               ),
             ),
+            Positioned(
+              top: 4,
+              right: 4,
+              child: GestureDetector(
+                onTap: widget.onOpenViewer,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.fullscreen, color: Colors.white, size: 16),
+                ),
+              ),
+            ),
             if (widget.isSelected)
               Container(
                 decoration: BoxDecoration(
@@ -540,3 +618,4 @@ class _BlurryPhotoThumbState extends State<_BlurryPhotoThumb> {
     );
   }
 }
+

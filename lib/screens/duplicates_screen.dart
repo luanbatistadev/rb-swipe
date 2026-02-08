@@ -8,6 +8,8 @@ import '../models/media_item.dart';
 import '../services/duplicate_detector_service.dart';
 import '../services/kept_media_service.dart';
 import '../services/media_service.dart';
+import '../widgets/delete_confirm_dialog.dart';
+import '../widgets/image_viewer.dart';
 
 const _backgroundColor = Color(0xFF0f0f1a);
 const _cardColor = Color(0xFF1a1a2e);
@@ -132,8 +134,6 @@ class _DuplicatesScreenState extends State<DuplicatesScreen> {
   Future<void> _deleteSelected() async {
     if (_selectedToDelete.isEmpty) return;
 
-    setState(() => _isDeleting = true);
-
     final toDelete = <MediaItem>[];
     for (final group in _groups) {
       for (final item in group.items) {
@@ -143,38 +143,98 @@ class _DuplicatesScreenState extends State<DuplicatesScreen> {
       }
     }
 
+    int totalSize = 0;
+    for (final item in toDelete) {
+      totalSize += await item.fileSizeAsync;
+    }
+
+    if (!mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => DeleteConfirmDialog(
+        count: toDelete.length,
+        estimatedSize: totalSize,
+        itemLabel: 'arquivos selecionados',
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isDeleting = true);
+
     final deleted = await _mediaService.deleteMultipleMedia(toDelete);
 
-    if (mounted) {
-      setState(() {
-        final updatedGroups = <DuplicateGroup>[];
-        for (final group in _groups) {
-          final remainingItems = group.items
-              .where((item) => !_selectedToDelete.contains(item.asset.id))
-              .toList();
-          if (remainingItems.length > 1) {
-            updatedGroups.add(DuplicateGroup(
-              items: remainingItems,
-              totalSize: 0,
-            ));
-          }
-        }
-        _groups = updatedGroups;
-        _selectedToDelete.clear();
-        _isDeleting = false;
-      });
+    if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$deleted arquivos apagados'),
-          backgroundColor: _successColor,
+    setState(() {
+      final updatedGroups = <DuplicateGroup>[];
+      for (final group in _groups) {
+        final remainingItems = group.items
+            .where((item) => !_selectedToDelete.contains(item.asset.id))
+            .toList();
+        if (remainingItems.length > 1) {
+          updatedGroups.add(DuplicateGroup(
+            items: remainingItems,
+            totalSize: 0,
+          ));
+        }
+      }
+      _groups = updatedGroups;
+      _selectedToDelete.clear();
+      _isDeleting = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$deleted arquivos apagados'),
+        backgroundColor: _successColor,
+      ),
+    );
+  }
+
+  void _openViewer(DuplicateGroup group, int initialIndex) {
+    final items = group.items;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ImageViewer(
+          items: items,
+          initialIndex: initialIndex,
+          selectedToDelete: _selectedToDelete,
+          onToggleSelection: _toggleSelection,
+          accentColor: _accentColor,
         ),
-      );
-    }
+      ),
+    ).then((_) => setState(() {}));
   }
 
   @override
   Widget build(BuildContext context) {
+    final Widget body;
+
+    if (_isDeleting) {
+      body = const _DeletingWidget();
+    } else if (_error != null && _groups.isEmpty) {
+      body = _ErrorWidget(error: _error!, onRetry: _scan);
+    } else if (!_isScanning && _groups.isEmpty) {
+      body = const _EmptyWidget();
+    } else {
+      body = _DuplicatesList(
+        groups: _groups,
+        selectedToDelete: _selectedToDelete,
+        onToggleSelection: _toggleSelection,
+        onSelectAllExceptFirst: _selectAllExceptFirst,
+        onKeepGroup: _keepGroup,
+        onOpenViewer: _openViewer,
+        isScanning: _isScanning,
+        progress: _progress,
+        total: _total,
+        phase: _phase,
+      );
+    }
+
     return Scaffold(
       backgroundColor: _backgroundColor,
       appBar: AppBar(
@@ -200,51 +260,8 @@ class _DuplicatesScreenState extends State<DuplicatesScreen> {
             ),
         ],
       ),
-      body: _buildBody(),
+      body: body,
     );
-  }
-
-  Widget _buildBody() {
-    if (_isDeleting) {
-      return const _DeletingWidget();
-    }
-
-    if (_error != null && _groups.isEmpty) {
-      return _ErrorWidget(error: _error!, onRetry: _scan);
-    }
-
-    if (!_isScanning && _groups.isEmpty) {
-      return const _EmptyWidget();
-    }
-
-    return _DuplicatesList(
-      groups: _groups,
-      selectedToDelete: _selectedToDelete,
-      onToggleSelection: _toggleSelection,
-      onSelectAllExceptFirst: _selectAllExceptFirst,
-      onKeepGroup: _keepGroup,
-      onOpenViewer: _openViewer,
-      isScanning: _isScanning,
-      progress: _progress,
-      total: _total,
-      phase: _phase,
-    );
-  }
-
-  void _openViewer(DuplicateGroup group, int initialIndex) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => _CompareViewer(
-          group: group,
-          initialIndex: initialIndex,
-          selectedToDelete: _selectedToDelete,
-          onToggleSelection: (item) {
-            _toggleSelection(item);
-          },
-        ),
-      ),
-    ).then((_) => setState(() {}));
   }
 }
 
@@ -358,7 +375,6 @@ class _DuplicatesList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // +1 for summary, +1 for scanning indicator if scanning
     final itemCount = groups.length + 1 + (isScanning ? 1 : 0);
 
     return ListView.builder(
@@ -366,7 +382,11 @@ class _DuplicatesList extends StatelessWidget {
       itemCount: itemCount,
       itemBuilder: (context, index) {
         if (index == 0) {
-          return _buildSummary();
+          return _DuplicatesSummary(
+            groupCount: groups.length,
+            isScanning: isScanning,
+            groups: groups,
+          );
         }
 
         if (isScanning && index == itemCount - 1) {
@@ -387,10 +407,25 @@ class _DuplicatesList extends StatelessWidget {
       },
     );
   }
+}
 
-  Widget _buildSummary() {
+class _DuplicatesSummary extends StatelessWidget {
+  final int groupCount;
+  final bool isScanning;
+  final List<DuplicateGroup> groups;
+
+  const _DuplicatesSummary({
+    required this.groupCount,
+    required this.isScanning,
+    required this.groups,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final totalDuplicates = groups.fold<int>(0, (sum, g) => sum + g.items.length - 1);
     final totalPhotos = groups.fold<int>(0, (sum, g) => sum + g.items.length);
+    final suffix = isScanning ? '+' : '';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
@@ -404,17 +439,17 @@ class _DuplicatesList extends StatelessWidget {
         children: [
           _SummaryItem(
             icon: Icons.photo_library,
-            value: '${groups.length}${isScanning ? '+' : ''}',
+            value: '$groupCount$suffix',
             label: 'grupos',
           ),
           _SummaryItem(
             icon: Icons.content_copy,
-            value: '$totalDuplicates${isScanning ? '+' : ''}',
+            value: '$totalDuplicates$suffix',
             label: 'duplicatas',
           ),
           _SummaryItem(
             icon: Icons.photo,
-            value: '$totalPhotos${isScanning ? '+' : ''}',
+            value: '$totalPhotos$suffix',
             label: 'fotos',
           ),
         ],
@@ -525,10 +560,6 @@ class _DuplicateGroupCard extends StatelessWidget {
     required this.onOpenViewer,
   });
 
-  void _onThumbLongPress(int index) {
-    onOpenViewer(group, index);
-  }
-
   String get _dateTimeText {
     if (group.items.isEmpty) return '';
     final date = group.items.first.asset.createDateTime;
@@ -621,7 +652,7 @@ class _DuplicateGroupCard extends StatelessWidget {
                   isSelected: isSelected,
                   isFirst: index == 0,
                   onTap: () => onToggleSelection(item),
-                  onLongPress: () => _onThumbLongPress(index),
+                  onLongPress: () => onOpenViewer(group, index),
                 );
               },
             ),
@@ -677,12 +708,21 @@ class _DuplicateThumbState extends State<_DuplicateThumb> {
   }
 
   Future<void> _loadThumbnail() async {
-    try {
-      final thumb = await widget.item.asset
-          .thumbnailDataWithSize(const ThumbnailSize(300, 300), quality: 85)
-          .timeout(const Duration(seconds: 5), onTimeout: () => null);
-      if (mounted && thumb != null) setState(() => _thumbnail = thumb);
-    } catch (_) {}
+    final thumb = await widget.item.asset
+        .thumbnailDataWithSize(const ThumbnailSize(300, 300), quality: 85)
+        .timeout(const Duration(seconds: 5), onTimeout: () => null);
+    if (mounted && thumb != null) setState(() => _thumbnail = thumb);
+  }
+
+  Color get _borderColor {
+    if (widget.isSelected) return _deleteColor;
+    if (widget.isFirst) return _successColor;
+    return Colors.transparent;
+  }
+
+  double get _borderWidth {
+    if (widget.isSelected || widget.isFirst) return 3;
+    return 0;
   }
 
   @override
@@ -696,10 +736,7 @@ class _DuplicateThumbState extends State<_DuplicateThumb> {
         margin: const EdgeInsets.symmetric(horizontal: 6),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: widget.isSelected ? _deleteColor : (widget.isFirst ? _successColor : Colors.transparent),
-            width: widget.isSelected || widget.isFirst ? 3 : 0,
-          ),
+          border: Border.all(color: _borderColor, width: _borderWidth),
           boxShadow: widget.isSelected
               ? [BoxShadow(color: _deleteColor.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 1)]
               : null,
@@ -761,232 +798,6 @@ class _DuplicateThumbState extends State<_DuplicateThumb> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _CompareViewer extends StatefulWidget {
-  final DuplicateGroup group;
-  final int initialIndex;
-  final Set<String> selectedToDelete;
-  final void Function(MediaItem) onToggleSelection;
-
-  const _CompareViewer({
-    required this.group,
-    required this.initialIndex,
-    required this.selectedToDelete,
-    required this.onToggleSelection,
-  });
-
-  @override
-  State<_CompareViewer> createState() => _CompareViewerState();
-}
-
-class _CompareViewerState extends State<_CompareViewer> {
-  late PageController _pageController;
-  late int _currentIndex;
-
-  @override
-  void initState() {
-    super.initState();
-    _currentIndex = widget.initialIndex;
-    _pageController = PageController(initialPage: widget.initialIndex);
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final currentItem = widget.group.items[_currentIndex];
-    final isSelected = widget.selectedToDelete.contains(currentItem.asset.id);
-
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          '${_currentIndex + 1} de ${widget.group.items.length}',
-          style: const TextStyle(color: Colors.white),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(
-              isSelected ? Icons.check_circle : Icons.circle_outlined,
-              color: isSelected ? _deleteColor : Colors.white,
-            ),
-            onPressed: () {
-              widget.onToggleSelection(currentItem);
-              setState(() {});
-            },
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: widget.group.items.length,
-              onPageChanged: (index) => setState(() => _currentIndex = index),
-              itemBuilder: (context, index) {
-                return _FullImagePage(item: widget.group.items[index]);
-              },
-            ),
-          ),
-          _buildBottomBar(currentItem, isSelected),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBottomBar(MediaItem currentItem, bool isSelected) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _cardColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                widget.group.items.length,
-                (index) => Container(
-                  width: 8,
-                  height: 8,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: index == _currentIndex
-                        ? _accentColor
-                        : Colors.white.withValues(alpha: 0.3),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      if (!isSelected) {
-                        widget.onToggleSelection(currentItem);
-                        setState(() {});
-                      }
-                    },
-                    icon: Icon(
-                      isSelected ? Icons.check : Icons.delete_outline,
-                      color: isSelected ? _successColor : _deleteColor,
-                    ),
-                    label: Text(
-                      isSelected ? 'Selecionada' : 'Marcar p/ apagar',
-                      style: TextStyle(
-                        color: isSelected ? _successColor : _deleteColor,
-                      ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(
-                        color: isSelected ? _successColor : _deleteColor,
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-                if (isSelected) ...[
-                  const SizedBox(width: 12),
-                  OutlinedButton(
-                    onPressed: () {
-                      widget.onToggleSelection(currentItem);
-                      setState(() {});
-                    },
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.white54),
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                    ),
-                    child: const Text('Desmarcar', style: TextStyle(color: Colors.white54)),
-                  ),
-                ],
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FullImagePage extends StatefulWidget {
-  final MediaItem item;
-
-  const _FullImagePage({required this.item});
-
-  @override
-  State<_FullImagePage> createState() => _FullImagePageState();
-}
-
-class _FullImagePageState extends State<_FullImagePage> {
-  Uint8List? _imageData;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadImage();
-  }
-
-  Future<void> _loadImage() async {
-    try {
-      final data = await widget.item.asset
-          .thumbnailDataWithSize(const ThumbnailSize(1200, 1200), quality: 90)
-          .timeout(const Duration(seconds: 10), onTimeout: () => null);
-      if (mounted && data != null) {
-        setState(() {
-          _imageData = data;
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) {
-      return const Center(
-        child: CircularProgressIndicator(color: _accentColor),
-      );
-    }
-
-    if (_imageData == null) {
-      return Center(
-        child: Icon(
-          Icons.broken_image,
-          size: 64,
-          color: Colors.white.withValues(alpha: 0.3),
-        ),
-      );
-    }
-
-    return InteractiveViewer(
-      minScale: 0.5,
-      maxScale: 4.0,
-      child: Center(
-        child: Image.memory(_imageData!, fit: BoxFit.contain),
       ),
     );
   }

@@ -2,8 +2,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/media_item.dart';
+import 'live_photo_preview.dart';
 import 'video_preview.dart';
 
 class CachedMediaData {
@@ -102,13 +104,13 @@ class _MediaCardState extends State<MediaCard> {
   @override
   void didUpdateWidget(MediaCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.mediaItem.asset.id != widget.mediaItem.asset.id) {
-      final cached = ThumbnailCache.getCached(widget.mediaItem.asset.id);
-      if (cached != null) {
-        _data = cached;
-      } else {
-        _loadData();
-      }
+    if (oldWidget.mediaItem.asset.id == widget.mediaItem.asset.id) return;
+
+    final cached = ThumbnailCache.getCached(widget.mediaItem.asset.id);
+    if (cached != null) {
+      _data = cached;
+    } else {
+      _loadData();
     }
   }
 
@@ -121,173 +123,164 @@ class _MediaCardState extends State<MediaCard> {
     }
 
     ThumbnailCache.getMediaData(widget.mediaItem).then((data) {
-      if (mounted) {
-        setState(() => _data = data);
-        _loadFileSize();
-      }
+      if (!mounted) return;
+      setState(() => _data = data);
+      _loadFileSize();
     });
   }
 
   void _loadFileSize() {
     ThumbnailCache.loadFileSize(widget.mediaItem).then((size) {
-      if (mounted && size > 0) {
-        setState(() {});
-      }
+      if (mounted && size > 0) setState(() {});
     });
+  }
+
+  void _showInfoSheet() {
+    final item = widget.mediaItem;
+    final fileSizeFuture = ThumbnailCache.loadFileSize(item);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a2e),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            _InfoRow(icon: Icons.title, label: 'Nome', value: item.title),
+            _InfoRow(icon: Icons.calendar_today, label: 'Data', value: item.formattedDate),
+            FutureBuilder<int>(
+              future: fileSizeFuture,
+              builder: (_, snapshot) => _InfoRow(
+                icon: Icons.storage,
+                label: 'Tamanho',
+                value: snapshot.hasData && snapshot.data! > 0
+                    ? MediaItem.formatSize(snapshot.data!)
+                    : 'Calculando...',
+              ),
+            ),
+            _InfoRow(icon: Icons.aspect_ratio, label: 'Dimensoes', value: item.dimensions),
+            if (item.isVideo)
+              _InfoRow(icon: Icons.timer, label: 'Duracao', value: item.formattedDuration),
+            if (item.isLivePhoto)
+              const _InfoRow(icon: Icons.motion_photos_on, label: 'Tipo', value: 'Live Photo'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _shareMedia() async {
+    final box = context.findRenderObject() as RenderBox?;
+    final origin = box != null
+        ? box.localToGlobal(Offset.zero) & box.size
+        : Rect.fromCenter(center: const Offset(200, 400), width: 100, height: 100);
+
+    final file = await widget.mediaItem.asset.file;
+    if (file == null || !mounted) return;
+
+    await Share.shareXFiles([XFile(file.path)], sharePositionOrigin: origin);
   }
 
   @override
   Widget build(BuildContext context) {
     final cachedData = _data ?? ThumbnailCache.getCached(widget.mediaItem.asset.id);
+    final thumbnail = cachedData?.thumbnail;
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            _buildMediaContent(cachedData?.thumbnail),
-            _buildGradientOverlay(),
-            _buildInfoOverlay(cachedData?.fileSize ?? 0),
-            if (!widget.mediaItem.isVideo) _buildTypeIndicator(),
-          ],
+    final Widget mediaContent;
+    if (widget.mediaItem.isLivePhoto) {
+      mediaContent = LivePhotoPreview(
+        mediaItem: widget.mediaItem,
+        thumbnail: thumbnail,
+      );
+    } else if (widget.mediaItem.isVideo) {
+      mediaContent = VideoPreview(mediaItem: widget.mediaItem);
+    } else if (thumbnail != null) {
+      mediaContent = Image.memory(thumbnail, fit: BoxFit.contain, gaplessPlayback: true);
+    } else {
+      mediaContent = Container(
+        color: const Color(0xFF0f0f1a),
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
         ),
-      ),
-    );
-  }
-
-  Widget _buildMediaContent(Uint8List? thumbnail) {
-    if (widget.mediaItem.isVideo) {
-      return VideoPreview(mediaItem: widget.mediaItem);
-    }
-
-    if (thumbnail != null) {
-      return Image.memory(thumbnail, fit: BoxFit.cover, gaplessPlayback: true);
+      );
     }
 
     return Container(
-      color: const Color(0xFF1a1a2e),
-      child: const Center(child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
-    );
-  }
-
-  Widget _buildGradientOverlay() {
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        height: 180,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.8)],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoOverlay(int fileSize) {
-    return Positioned(
-      bottom: 20,
-      left: 20,
-      right: 20,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      color: const Color(0xFF0f0f1a),
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          Row(
-            children: [
-              Icon(
-                widget.mediaItem.isVideo ? Icons.videocam : Icons.photo,
-                color: Colors.white,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  widget.mediaItem.title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              _InfoChip(icon: Icons.storage, label: widget.mediaItem.formatSize(fileSize)),
-              const SizedBox(width: 12),
-              _InfoChip(icon: Icons.calendar_today, label: widget.mediaItem.formattedDate),
-            ],
+          mediaContent,
+          Positioned(
+            bottom: 12,
+            right: 12,
+            child: Row(
+              children: [
+                _CircleButton(icon: Icons.info_outline, onTap: _showInfoSheet),
+                const SizedBox(width: 10),
+                _CircleButton(icon: Icons.share, onTap: _shareMedia),
+              ],
+            ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildTypeIndicator() {
-    return Positioned(
-      top: 16,
-      right: 16,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.7),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.photo, color: Colors.white, size: 16),
-            SizedBox(width: 4),
-            Text(
-              'Foto',
-              style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
       ),
     );
   }
 }
 
-class _InfoChip extends StatelessWidget {
+class _CircleButton extends StatelessWidget {
   final IconData icon;
-  final String label;
+  final VoidCallback onTap;
 
-  const _InfoChip({required this.icon, required this.label});
+  const _CircleButton({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(12),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.5),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: Colors.white, size: 20),
       ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _InfoRow({required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.white70, size: 14),
-          const SizedBox(width: 4),
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
+          Icon(icon, color: Colors.white54, size: 18),
+          const SizedBox(width: 12),
+          Text(label, style: const TextStyle(color: Colors.white54, fontSize: 14)),
+          const Spacer(),
+          Text(value, style: const TextStyle(color: Colors.white, fontSize: 14)),
         ],
       ),
     );

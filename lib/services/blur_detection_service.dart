@@ -9,7 +9,6 @@ import 'kept_media_service.dart';
 
 const _blurThreshold = 100.0;
 const _thumbnailSize = 100;
-const _maxScan = 500;
 const _concurrency = 4;
 
 class BlurryPhoto {
@@ -62,7 +61,7 @@ class BlurDetectionService {
 
       final allPhotos = albums.first;
       final totalCount = await allPhotos.assetCountAsync;
-      final scanCount = totalCount.clamp(0, _maxScan);
+      final scanCount = totalCount;
 
       yield BlurryScanProgress(current: 0, total: scanCount, blurryPhotos: blurryPhotos);
 

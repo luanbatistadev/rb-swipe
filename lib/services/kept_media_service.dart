@@ -1,8 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
-/// Serviço para persistir IDs de mídias mantidas.
-/// Usa SQLite para persistência e Set em memória para queries O(1).
 class KeptMediaService {
   static KeptMediaService _instance = KeptMediaService._internal();
   factory KeptMediaService() => _instance;
@@ -10,6 +8,7 @@ class KeptMediaService {
 
   Database? _database;
   final Set<String> _keptIds = {};
+  final Set<String> _pendingKeptIds = {};
   bool _isInitialized = false;
 
   static void resetInstance() {
@@ -36,11 +35,9 @@ class KeptMediaService {
   }
 
   Future<void> _onCreate(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE kept_media (
-        asset_id TEXT PRIMARY KEY
-      )
-    ''');
+    await db.execute(
+      'CREATE TABLE kept_media (asset_id TEXT PRIMARY KEY)',
+    );
   }
 
   Future<void> _loadFromDatabase() async {
@@ -49,8 +46,6 @@ class KeptMediaService {
   }
 
   bool isKept(String assetId) => _keptIds.contains(assetId);
-
-  final Set<String> _pendingKeptIds = {};
 
   void trackKept(String assetId) {
     _keptIds.add(assetId);
@@ -68,15 +63,7 @@ class KeptMediaService {
     final toFlush = List<String>.from(_pendingKeptIds);
     _pendingKeptIds.clear();
 
-    final batch = _database?.batch();
-    for (final id in toFlush) {
-      batch?.insert(
-        'kept_media',
-        {'asset_id': id},
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
-    }
-    await batch?.commit(noResult: true);
+    await _insertBatch(toFlush);
   }
 
   Future<void> addKept(String assetId) async {
@@ -95,16 +82,7 @@ class KeptMediaService {
     if (newIds.isEmpty) return;
 
     _keptIds.addAll(newIds);
-
-    final batch = _database?.batch();
-    for (final id in newIds) {
-      batch?.insert(
-        'kept_media',
-        {'asset_id': id},
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
-    }
-    await batch?.commit(noResult: true);
+    await _insertBatch(newIds);
   }
 
   Future<void> removeKept(String assetId) async {
@@ -119,4 +97,16 @@ class KeptMediaService {
   Set<String> get keptIds => Set.unmodifiable(_keptIds);
 
   int get keptCount => _keptIds.length;
+
+  Future<void> _insertBatch(List<String> ids) async {
+    final batch = _database?.batch();
+    for (final id in ids) {
+      batch?.insert(
+        'kept_media',
+        {'asset_id': id},
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
+    await batch?.commit(noResult: true);
+  }
 }

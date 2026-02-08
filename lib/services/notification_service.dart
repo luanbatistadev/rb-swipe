@@ -72,13 +72,11 @@ class NotificationService {
 
     if (items.isEmpty) return;
 
-    final body =
-        '${items.join(', ')}. Libere ${estimatedSpaceGB.toStringAsFixed(1)}GB!';
-
     await _show(
       id: 1,
       title: 'Hora de Limpar!',
-      body: body,
+      body:
+          '${items.join(', ')}. Libere ${estimatedSpaceGB.toStringAsFixed(1)}GB!',
     );
   }
 
@@ -122,7 +120,7 @@ class NotificationService {
   Future<void> scheduleWeeklyCleanup() async {
     await _notifications.zonedSchedule(
       id: 100,
-      title: '🧹 Bora dar aquela organizada?',
+      title: 'Bora dar aquela organizada?',
       body: 'Sua galeria ta pedindo uma limpeza! Que tal dar uma olhada?',
       scheduledDate: _nextWeekday(DateTime.monday, 10),
       notificationDetails: const NotificationDetails(
@@ -144,7 +142,7 @@ class NotificationService {
   Future<void> scheduleOnThisDayDaily() async {
     await _notifications.zonedSchedule(
       id: 101,
-      title: '📸 Neste Dia',
+      title: 'Neste Dia',
       body: 'Olha so que memorias legais de anos atras! Vem relembrar',
       scheduledDate: _nextInstanceOfTime(9, 0),
       notificationDetails: const NotificationDetails(
@@ -160,6 +158,24 @@ class NotificationService {
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       matchDateTimeComponents: DateTimeComponents.time,
     );
+  }
+
+  Future<void> scheduleRecurringNotifications() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isScheduled = prefs.getBool('notifications_scheduled') ?? false;
+    if (isScheduled) return;
+
+    await scheduleWeeklyCleanup();
+    await scheduleOnThisDayDaily();
+    await prefs.setBool('notifications_scheduled', true);
+  }
+
+  Future<void> cancelAll() async {
+    await _notifications.cancelAll();
+  }
+
+  Future<void> cancel(int id) async {
+    await _notifications.cancel(id: id);
   }
 
   Future<void> _show({
@@ -199,24 +215,5 @@ class NotificationService {
     }
 
     return scheduledDate;
-  }
-
-  Future<void> cancelAll() async {
-    await _notifications.cancelAll();
-  }
-
-  Future<void> cancel(int id) async {
-    await _notifications.cancel(id: id);
-  }
-
-  Future<void> scheduleRecurringNotifications() async {
-    final prefs = await SharedPreferences.getInstance();
-    final isScheduled = prefs.getBool('notifications_scheduled') ?? false;
-
-    if (!isScheduled) {
-      await scheduleWeeklyCleanup();
-      await scheduleOnThisDayDaily();
-      await prefs.setBool('notifications_scheduled', true);
-    }
   }
 }

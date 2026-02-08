@@ -19,7 +19,7 @@ class GalleryScreen extends StatefulWidget {
 }
 
 class _GalleryScreenState extends State<GalleryScreen> {
-  final MediaService _mediaService = MediaService();
+  final _mediaService = MediaService();
   bool _isLoading = true;
   List<DateGroup> _groups = [];
   List<OnThisDayGroup> _onThisDayGroups = [];
@@ -35,88 +35,66 @@ class _GalleryScreenState extends State<GalleryScreen> {
     final hasPermission = await _mediaService.requestPermission();
     setState(() => _hasPermission = hasPermission);
 
-    if (hasPermission) {
-      final results = await Future.wait([
-        _mediaService.getAvailableMonths(),
-        _mediaService.getOnThisDay(),
-      ]);
-      setState(() {
-        _groups = results[0] as List<DateGroup>;
-        _onThisDayGroups = results[1] as List<OnThisDayGroup>;
-        _isLoading = false;
-      });
-    } else {
+    if (!hasPermission) {
       setState(() => _isLoading = false);
+      return;
     }
+
+    final results = await Future.wait([
+      _mediaService.getAvailableMonths(),
+      _mediaService.getOnThisDay(),
+    ]);
+    setState(() {
+      _groups = results[0] as List<DateGroup>;
+      _onThisDayGroups = results[1] as List<OnThisDayGroup>;
+      _isLoading = false;
+    });
   }
 
-  Future<void> _onGroupSelected(DateGroup group) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => SwipeScreen(selectedDate: group.date, album: group.album),
-      ),
-    );
-    if (mounted) setState(() => _isLoading = true);
-    _loadGroups();
-  }
-
-  Future<void> _onOnThisDaySelected(OnThisDayGroup group) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            SwipeScreen(selectedDate: group.date, album: group.album, isOnThisDay: true),
-      ),
-    );
-    if (mounted) setState(() => _isLoading = true);
-    _loadGroups();
-  }
-
-  void _openDuplicates() {
-    Navigator.push(context, MaterialPageRoute(builder: (context) => const DuplicatesScreen()));
-  }
-
-  void _openScreenshots() {
-    Navigator.push(context, MaterialPageRoute(builder: (context) => const ScreenshotsScreen()));
-  }
-
-  void _openBlurryPhotos() {
-    Navigator.push(context, MaterialPageRoute(builder: (context) => const BlurryPhotosScreen()));
-  }
-
-  Future<void> _openSwipeAll() async {
-    await Navigator.push(context, MaterialPageRoute(builder: (context) => const SwipeScreen()));
-    if (mounted) setState(() => _isLoading = true);
+  Future<void> _navigateAndReload(Widget screen) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+    if (!mounted) return;
+    setState(() => _isLoading = true);
     _loadGroups();
   }
 
   @override
   Widget build(BuildContext context) {
+    final Widget body;
+
+    if (_isLoading) {
+      body = const Center(child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2));
+    } else if (!_hasPermission) {
+      body = _PermissionRequest(onRequestPermission: _loadGroups);
+    } else {
+      body = _MainContent(
+        groups: _groups,
+        onThisDayGroups: _onThisDayGroups,
+        onGroupSelected: (group) => _navigateAndReload(
+          SwipeScreen(selectedDate: group.date, album: group.album),
+        ),
+        onOnThisDaySelected: (group) => _navigateAndReload(
+          SwipeScreen(selectedDate: group.date, album: group.album, isOnThisDay: true),
+        ),
+        onSwipeAllTap: () => _navigateAndReload(const SwipeScreen()),
+        onDuplicatesTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const DuplicatesScreen()),
+        ),
+        onScreenshotsTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ScreenshotsScreen()),
+        ),
+        onBlurryPhotosTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const BlurryPhotosScreen()),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFF0f0f1a),
-      body: SafeArea(child: _buildContent()),
-    );
-  }
-
-  Widget _buildContent() {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2));
-    }
-
-    if (!_hasPermission) {
-      return _PermissionRequest(onRequestPermission: _loadGroups);
-    }
-
-    return _MainContent(
-      groups: _groups,
-      onThisDayGroups: _onThisDayGroups,
-      onGroupSelected: _onGroupSelected,
-      onOnThisDaySelected: _onOnThisDaySelected,
-      onSwipeAllTap: _openSwipeAll,
-      onDuplicatesTap: _openDuplicates,
-      onScreenshotsTap: _openScreenshots,
-      onBlurryPhotosTap: _openBlurryPhotos,
+      body: SafeArea(child: body),
     );
   }
 }
