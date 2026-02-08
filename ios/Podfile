@@ -52,10 +52,25 @@ post_install do |installer|
   runner_target = project.native_targets.find { |t| t.name == 'Runner' }
   if runner_target
     phase_name = 'Strip Simulator Frameworks'
-    unless runner_target.shell_script_build_phases.any? { |p| p.name == phase_name }
-      phase = runner_target.new_shell_script_build_phase(phase_name)
-      phase.shell_script = "find \"${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Frameworks\" -name \"*_sim.framework\" -type d -exec rm -rf {} + 2>/dev/null || true\n"
-    end
+    existing = runner_target.shell_script_build_phases.find { |p| p.name == phase_name }
+    existing.remove_from_project if existing
+
+    phase = runner_target.new_shell_script_build_phase(phase_name)
+    phase.shell_script = <<~SCRIPT
+      FRAMEWORKS_DIR="${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Frameworks"
+      [ ! -d "$FRAMEWORKS_DIR" ] && exit 0
+      find "$FRAMEWORKS_DIR" -name "*_sim.framework" -type d -exec rm -rf {} + 2>/dev/null || true
+      find "$FRAMEWORKS_DIR" -name "*.framework" -type d | while read framework; do
+        binary="$framework/$(basename "$framework" .framework)"
+        [ ! -f "$binary" ] && continue
+        archs=$(lipo -info "$binary" 2>/dev/null | sed -E 's/.*://')
+        for sim_arch in x86_64 i386; do
+          if echo "$archs" | grep -q "$sim_arch"; then
+            lipo -remove "$sim_arch" "$binary" -output "$binary" 2>/dev/null || true
+          fi
+        done
+      done
+    SCRIPT
     project.save
   end
 end

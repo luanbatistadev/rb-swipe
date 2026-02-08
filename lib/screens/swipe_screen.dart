@@ -380,12 +380,10 @@ class _MediaSwiperState extends State<_MediaSwiper> {
     return CardSwiper(
       controller: _controller,
       cardsCount: widget.mediaItems.length,
-      numberOfCardsDisplayed: widget.mediaItems.length >= 2 ? 2 : 1,
-      backCardOffset: const Offset(0, 30),
+      numberOfCardsDisplayed: 1,
       padding: const EdgeInsets.only(bottom: 24),
       isLoop: false,
       duration: const Duration(milliseconds: 200),
-      scale: 0.95,
       onSwipe: (previousIndex, currentIndex, direction) {
         if (previousIndex < widget.mediaItems.length) {
           widget.onSwipe(direction, widget.mediaItems[previousIndex]);
