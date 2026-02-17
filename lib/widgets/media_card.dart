@@ -185,14 +185,24 @@ class _MediaCardState extends State<MediaCard> {
     _isSharingNotifier.value = true;
 
     try {
-      final file = await widget.mediaItem.asset.loadFile();
+      final item = widget.mediaItem;
+      final file = await item.asset.loadFile(
+        withSubtype: item.isLivePhoto,
+      );
+
       if (file == null || !mounted) {
         _isSharingNotifier.value = false;
         return;
       }
 
       await Share.shareXFiles([XFile(file.path)], sharePositionOrigin: origin);
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao compartilhar: $e')),
+        );
+      }
+    }
 
     if (mounted) _isSharingNotifier.value = false;
   }
@@ -269,23 +279,38 @@ class _MediaCardState extends State<MediaCard> {
   }
 }
 
-class _CircleButton extends StatelessWidget {
+class _CircleButton extends StatefulWidget {
   final IconData icon;
   final VoidCallback onTap;
 
   const _CircleButton({required this.icon, required this.onTap});
 
   @override
+  State<_CircleButton> createState() => _CircleButtonState();
+}
+
+class _CircleButtonState extends State<_CircleButton> {
+  Offset? _downPosition;
+
+  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (event) => _downPosition = event.position,
+      onPointerUp: (event) {
+        if (_downPosition != null && (event.position - _downPosition!).distance < 20) {
+          widget.onTap();
+        }
+        _downPosition = null;
+      },
+      onPointerCancel: (_) => _downPosition = null,
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.5),
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: Colors.white, size: 20),
+        child: Icon(widget.icon, color: Colors.white, size: 20),
       ),
     );
   }

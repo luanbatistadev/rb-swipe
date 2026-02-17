@@ -1,7 +1,7 @@
 name: swipe
 description: "Swipe Cleaner - Organize suas fotos e vídeos"
 publish_to: "none"
-version: 0.0.25+25
+version: 0.0.26+26
 
 environment:
   sdk: ^3.9.0
@@ -38,7 +38,7 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/swipe_right_rounded 16.png"
   adaptive_icon_background: "#6C5CE7"
-  adaptive_icon_foreground: "assets/logo icon.png"
+  adaptive_icon_foreground: "assets/logo_icon_padded.png"
   remove_alpha_ios: true
 
 flutter:
