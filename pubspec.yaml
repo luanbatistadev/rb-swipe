@@ -1,7 +1,7 @@
 name: swipe
 description: "Swipe Cleaner - Organize suas fotos e vídeos"
 publish_to: "none"
-version: 0.0.26+26
+version: 0.0.27+27
 
 environment:
   sdk: ^3.9.0
@@ -25,6 +25,7 @@ dependencies:
   flutter_timezone: ^3.0.1
   sensors_plus: ^7.0.0
   share_plus: ^10.1.4
+  flutter_native_splash: ^2.4.7
 
 dev_dependencies:
   flutter_test:
@@ -41,5 +42,14 @@ flutter_launcher_icons:
   adaptive_icon_foreground: "assets/logo_icon_padded.png"
   remove_alpha_ios: true
 
+flutter_native_splash:
+  color: "#6C5CE7"
+  image: "assets/logo_icon_padded.png"
+  android_12:
+    color: "#6C5CE7"
+    image: "assets/logo_icon_padded.png"
+
 flutter:
   uses-material-design: true
+  assets:
+    - assets/logo icon.png

@@ -60,41 +60,54 @@ class _GalleryScreenState extends State<GalleryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final Widget body;
+    final Widget content;
 
     if (_isLoading) {
-      body = const Center(child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2));
+      content = const Expanded(
+        child: Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2),
+          ),
+        ),
+      );
     } else if (!_hasPermission) {
-      body = _PermissionRequest(onRequestPermission: _loadGroups);
+      content = Expanded(child: _PermissionRequest(onRequestPermission: _loadGroups));
     } else {
-      body = _MainContent(
-        groups: _groups,
-        onThisDayGroups: _onThisDayGroups,
-        onGroupSelected: (group) => _navigateAndReload(
-          SwipeScreen(selectedDate: group.date, album: group.album),
-        ),
-        onOnThisDaySelected: (group) => _navigateAndReload(
-          SwipeScreen(selectedDate: group.date, album: group.album, isOnThisDay: true),
-        ),
-        onSwipeAllTap: () => _navigateAndReload(const SwipeScreen()),
-        onDuplicatesTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const DuplicatesScreen()),
-        ),
-        onScreenshotsTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ScreenshotsScreen()),
-        ),
-        onBlurryPhotosTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const BlurryPhotosScreen()),
+      content = Expanded(
+        child: _MainContent(
+          groups: _groups,
+          onThisDayGroups: _onThisDayGroups,
+          onGroupSelected: (group) =>
+              _navigateAndReload(SwipeScreen(selectedDate: group.date, album: group.album)),
+          onOnThisDaySelected: (group) => _navigateAndReload(
+            SwipeScreen(selectedDate: group.date, album: group.album, isOnThisDay: true),
+          ),
+          onSwipeAllTap: () => _navigateAndReload(const SwipeScreen()),
+          onDuplicatesTap: () =>
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const DuplicatesScreen())),
+          onScreenshotsTap: () =>
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const ScreenshotsScreen())),
+          onBlurryPhotosTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const BlurryPhotosScreen()),
+          ),
         ),
       );
     }
 
     return Scaffold(
       backgroundColor: const Color(0xFF0f0f1a),
-      body: SafeArea(child: body),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(padding: EdgeInsets.fromLTRB(24, 20, 24, 0), child: _AnimatedTitle()),
+            content,
+          ],
+        ),
+      ),
     );
   }
 }
@@ -179,8 +192,7 @@ class _MainContent extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const _AnimatedTitle(),
-                const SizedBox(height: 32),
+                const SizedBox(height: 12),
                 _ToolsSection(
                   onSwipeAllTap: onSwipeAllTap,
                   onDuplicatesTap: onDuplicatesTap,
@@ -255,9 +267,9 @@ class _AnimatedTitleState extends State<_AnimatedTitle> with SingleTickerProvide
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: const Duration(seconds: 8))..repeat();
-    _gyroSub = gyroscopeEventStream(
-      samplingPeriod: const Duration(milliseconds: 40),
-    ).listen((event) {
+    _gyroSub = gyroscopeEventStream(samplingPeriod: const Duration(milliseconds: 40)).listen((
+      event,
+    ) {
       _gyroAngle += (event.x + event.y + event.z) * 0.3;
     });
   }
@@ -271,36 +283,50 @@ class _AnimatedTitleState extends State<_AnimatedTitle> with SingleTickerProvide
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text(
-          'RB ',
-          style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w300),
-        ),
-        ListenableBuilder(
-          listenable: _controller,
-          builder: (context, child) {
-            final t = _controller.value * 2 * math.pi;
-            final angle =
-                math.sin(t) * 1.5 + math.sin(t * 2.3) * 0.8 + math.cos(t * 0.7) * 1.2 + _gyroAngle;
-            return ShaderMask(
-              shaderCallback: (bounds) {
-                return LinearGradient(
-                  colors: _colors,
-                  stops: _stops,
-                  transform: GradientRotation(angle),
-                ).createShader(bounds);
+    return Hero(
+      tag: 'rb-swipe-title',
+      flightShuttleBuilder: (_, animation, __, ___, toHeroContext) {
+        return FittedBox(
+          child: FadeTransition(opacity: animation, child: toHeroContext.widget),
+        );
+      },
+      child: Material(
+        color: Colors.transparent,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'RB ',
+              style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w300),
+            ),
+            ListenableBuilder(
+              listenable: _controller,
+              builder: (context, child) {
+                final t = _controller.value * 2 * math.pi;
+                final angle =
+                    math.sin(t) * 1.5 +
+                    math.sin(t * 2.3) * 0.8 +
+                    math.cos(t * 0.7) * 1.2 +
+                    _gyroAngle;
+                return ShaderMask(
+                  shaderCallback: (bounds) {
+                    return LinearGradient(
+                      colors: _colors,
+                      stops: _stops,
+                      transform: GradientRotation(angle),
+                    ).createShader(bounds);
+                  },
+                  child: child,
+                );
               },
-              child: child,
-            );
-          },
-          child: const Text(
-            'Swipe',
-            style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w700),
-          ),
+              child: const Text(
+                'Swipe',
+                style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

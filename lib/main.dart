@@ -5,19 +5,21 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
 import 'firebase_options.dart';
-import 'screens/gallery_screen.dart';
+import 'screens/splash_screen.dart';
 import 'services/kept_media_service.dart';
 import 'services/notification_service.dart';
 
 Future<void> main() async {
   runZonedGuarded<Future<void>>(
     () async {
-      WidgetsFlutterBinding.ensureInitialized();
+      final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+      FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
       await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
       tz.initializeTimeZones();
@@ -75,7 +77,7 @@ class SwipeCleanerApp extends StatelessWidget {
         fontFamily: 'SF Pro Display',
         appBarTheme: const AppBarTheme(backgroundColor: Colors.transparent, elevation: 0),
       ),
-      home: const GalleryScreen(),
+      home: const SplashScreen(),
     );
   }
 }

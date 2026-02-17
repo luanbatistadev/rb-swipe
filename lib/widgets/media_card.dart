@@ -93,6 +93,7 @@ class MediaCard extends StatefulWidget {
 class _MediaCardState extends State<MediaCard> {
   final _dataNotifier = ValueNotifier<CachedMediaData?>(null);
   final _isSharingNotifier = ValueNotifier<bool>(false);
+  final _shareButtonKey = GlobalKey();
 
   @override
   void initState() {
@@ -177,10 +178,10 @@ class _MediaCardState extends State<MediaCard> {
   Future<void> _shareMedia() async {
     if (_isSharingNotifier.value) return;
 
-    final box = context.findRenderObject() as RenderBox?;
+    final box = _shareButtonKey.currentContext?.findRenderObject() as RenderBox?;
     final origin = box != null
         ? box.localToGlobal(Offset.zero) & box.size
-        : Rect.fromCenter(center: const Offset(200, 400), width: 100, height: 100);
+        : null;
 
     _isSharingNotifier.value = true;
 
@@ -267,7 +268,7 @@ class _MediaCardState extends State<MediaCard> {
                         ),
                       );
                     }
-                    return _CircleButton(icon: Icons.share, onTap: _shareMedia);
+                    return _CircleButton(key: _shareButtonKey, icon: Icons.share, onTap: _shareMedia);
                   },
                 ),
               ],
@@ -283,7 +284,7 @@ class _CircleButton extends StatefulWidget {
   final IconData icon;
   final VoidCallback onTap;
 
-  const _CircleButton({required this.icon, required this.onTap});
+  const _CircleButton({super.key, required this.icon, required this.onTap});
 
   @override
   State<_CircleButton> createState() => _CircleButtonState();
