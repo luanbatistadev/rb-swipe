@@ -201,7 +201,7 @@
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				E79B964464FDE3D1D0CC5C9A /* [CP] Embed Pods Frameworks */,
-				2CD2451359CFF5E9362A7FA9 /* Strip Simulator Frameworks */,
+				F57BFBBA9641C524C25AA952 /* Strip Simulator Frameworks */,
 			);
 			buildRules = (
 			);
@@ -296,24 +296,6 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		2CD2451359CFF5E9362A7FA9 /* Strip Simulator Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Strip Simulator Frameworks";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "FRAMEWORKS_DIR=\"${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Frameworks\"\n[ ! -d \"$FRAMEWORKS_DIR\" ] && exit 0\nfind \"$FRAMEWORKS_DIR\" -name \"*_sim.framework\" -type d -exec rm -rf {} + 2>/dev/null || true\nfind \"$FRAMEWORKS_DIR\" -name \"*.framework\" -type d | while read framework; do\n  binary=\"$framework/$(basename \"$framework\" .framework)\"\n  [ ! -f \"$binary\" ] && continue\n  archs=$(lipo -info \"$binary\" 2>/dev/null | sed -E 's/.*://')\n  for sim_arch in x86_64 i386; do\n    if echo \"$archs\" | grep -q \"$sim_arch\"; then\n      lipo -remove \"$sim_arch\" \"$binary\" -output \"$binary\" 2>/dev/null || true\n    fi\n  done\ndone\n";
-		};
 		3B06AD1E1E4923F5004D2608 /* Thin Binary */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -383,6 +365,24 @@
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
+		};
+		F57BFBBA9641C524C25AA952 /* Strip Simulator Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Strip Simulator Frameworks";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "FRAMEWORKS_DIR=\"${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Frameworks\"\n[ ! -d \"$FRAMEWORKS_DIR\" ] && exit 0\nfind \"$FRAMEWORKS_DIR\" -name \"*_sim.framework\" -type d -exec rm -rf {} + 2>/dev/null || true\nfind \"$FRAMEWORKS_DIR\" -name \"*.framework\" -type d | while read framework; do\n  binary=\"$framework/$(basename \"$framework\" .framework)\"\n  [ ! -f \"$binary\" ] && continue\n  archs=$(lipo -info \"$binary\" 2>/dev/null | sed -E 's/.*://')\n  for sim_arch in x86_64 i386; do\n    if echo \"$archs\" | grep -q \"$sim_arch\"; then\n      lipo -remove \"$sim_arch\" \"$binary\" -output \"$binary\" 2>/dev/null || true\n    fi\n  done\ndone\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

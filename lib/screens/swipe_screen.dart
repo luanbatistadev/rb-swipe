@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 
 import '../models/media_item.dart';
 import '../services/kept_media_service.dart';
@@ -133,7 +136,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
       case CardSwiperDirection.left:
         _itemsToDelete.add(item);
         _deletedCountNotifier.value++;
-        _cacheFileSize(item);
+        Future.delayed(const Duration(milliseconds: 300), () => _cacheFileSize(item));
         _checkBatchDelete();
       case CardSwiperDirection.right:
         _keptService.trackKept(item.asset.id);
@@ -145,8 +148,10 @@ class _SwipeScreenState extends State<SwipeScreen> {
 
   Future<void> _cacheFileSize(MediaItem item) async {
     if (_fileSizeCache.containsKey(item.asset.id)) return;
-    final size = await item.fileSizeAsync;
-    _fileSizeCache[item.asset.id] = size;
+    try {
+      final size = await item.fileSizeAsync;
+      _fileSizeCache[item.asset.id] = size;
+    } catch (_) {}
   }
 
   void _checkBatchDelete() {
@@ -172,7 +177,12 @@ class _SwipeScreenState extends State<SwipeScreen> {
     _isShowingBatchDialog = false;
 
     if (result == true) {
-      await _deleteCurrentBatch();
+      if (isFinal) {
+        await _deleteCurrentBatch();
+        if (mounted) _screenStateNotifier.value = ScreenState.finished;
+      } else {
+        _deleteCurrentBatch();
+      }
       return;
     }
 
@@ -184,33 +194,21 @@ class _SwipeScreenState extends State<SwipeScreen> {
   Future<void> _deleteCurrentBatch() async {
     if (_itemsToDelete.isEmpty) return;
 
-    _screenStateNotifier.value = ScreenState.processing;
+    final ids = _itemsToDelete.map((m) => m.asset.id).toList();
 
-    await _keptService.flushPendingKept();
-
-    final toDelete = List<MediaItem>.from(_itemsToDelete);
-    final deletedCount = await _mediaService.deleteMultipleMedia(toDelete);
-
-    _itemsToDelete.clear();
-    for (final item in toDelete) {
-      _fileSizeCache.remove(item.asset.id);
+    for (final id in ids) {
+      _fileSizeCache.remove(id);
     }
-
-    final swipedIds = _swipeHistory.map((a) => a.item.asset.id).toSet();
-    _mediaItems.removeWhere((item) => swipedIds.contains(item.asset.id));
+    _itemsToDelete.clear();
+    _deletedCountNotifier.value = 0;
     _swipeHistory.clear();
     _canUndoNotifier.value = false;
-    _swiperKey = GlobalKey();
+
+    _keptService.flushPendingKept();
+
+    final deletedCount = await _mediaService.deleteByIds(ids);
 
     _totalCountNotifier.value -= deletedCount;
-    _deletedCountNotifier.value = 0;
-
-    if (_mediaItems.isEmpty) {
-      _screenStateNotifier.value = ScreenState.finished;
-    } else {
-      ThumbnailCache.preloadThumbnails(_mediaItems, 0, 5);
-      _screenStateNotifier.value = ScreenState.swiping;
-    }
 
     if (!mounted) return;
 
@@ -272,71 +270,69 @@ class _SwipeScreenState extends State<SwipeScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _Header(
-              totalCountNotifier: _totalCountNotifier,
-              deletedCountNotifier: _deletedCountNotifier,
-              keptCountNotifier: _keptCountNotifier,
-              title: _title,
-              onDeleteTap: _onDeleteBadgeTap,
-            ),
-            Expanded(
-              child: ValueListenableBuilder<ScreenState>(
-                valueListenable: _screenStateNotifier,
-                builder: (context, state, _) {
-                  switch (state) {
-                    case ScreenState.loading:
-                      return const _LoadingWidget();
-                    case ScreenState.noPermission:
-                      return _PermissionError(errorMessage: _errorMessage, onRetry: _initialize);
-                    case ScreenState.empty:
-                    case ScreenState.finished:
-                      return _FinishedScreen(
-                        deletedCountNotifier: _deletedCountNotifier,
-                        keptCountNotifier: _keptCountNotifier,
-                        onRestart: _initialize,
-                        onClose: () => Navigator.pop(context),
-                      );
-                    case ScreenState.processing:
-                      return _ProcessingWidget(count: _itemsToDelete.length);
-                    case ScreenState.swiping:
-                      return _MediaSwiper(
-                        key: _swiperKey,
-                        mediaItems: _mediaItems,
-                        onSwipe: _onSwipe,
-                        onUndo: _onUndo,
-                        onNeedMoreItems: (i) => ThumbnailCache.preloadThumbnails(_mediaItems, i, 5),
-                        onFinished: _onFinished,
-                      );
-                  }
-                },
-              ),
-            ),
-            ValueListenableBuilder<ScreenState>(
+      body: Column(
+        children: [
+          _Header(
+            totalCountNotifier: _totalCountNotifier,
+            deletedCountNotifier: _deletedCountNotifier,
+            keptCountNotifier: _keptCountNotifier,
+            title: _title,
+            onDeleteTap: _onDeleteBadgeTap,
+          ),
+          Expanded(
+            child: ValueListenableBuilder<ScreenState>(
               valueListenable: _screenStateNotifier,
               builder: (context, state, _) {
-                if (state != ScreenState.swiping) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 40),
-                  child: ValueListenableBuilder<bool>(
-                    valueListenable: _canUndoNotifier,
-                    builder: (context, canUndo, _) {
-                      return ActionButtons(
-                        onDelete: () => _swiperKey.currentState?.swipeLeft(),
-                        onKeep: () => _swiperKey.currentState?.swipeRight(),
-                        onUndo: () => _swiperKey.currentState?.undo(),
-                        canUndo: canUndo,
-                        isLoading: false,
-                      );
-                    },
-                  ),
-                );
+                switch (state) {
+                  case ScreenState.loading:
+                    return const _LoadingWidget();
+                  case ScreenState.noPermission:
+                    return _PermissionError(errorMessage: _errorMessage, onRetry: _initialize);
+                  case ScreenState.empty:
+                  case ScreenState.finished:
+                    return _FinishedScreen(
+                      deletedCountNotifier: _deletedCountNotifier,
+                      keptCountNotifier: _keptCountNotifier,
+                      onRestart: _initialize,
+                      onClose: () => Navigator.pop(context),
+                    );
+                  case ScreenState.processing:
+                    return _ProcessingWidget(count: _itemsToDelete.length);
+                  case ScreenState.swiping:
+                    return _MediaSwiper(
+                      key: _swiperKey,
+                      mediaItems: _mediaItems,
+                      onSwipe: _onSwipe,
+                      onUndo: _onUndo,
+                      onNeedMoreItems: (i) => ThumbnailCache.preloadThumbnails(_mediaItems, i, 5),
+                      onFinished: _onFinished,
+                    );
+                }
               },
             ),
-          ],
-        ),
+          ),
+          ValueListenableBuilder<ScreenState>(
+            valueListenable: _screenStateNotifier,
+            builder: (context, state, _) {
+              if (state != ScreenState.swiping) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 24),
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: _canUndoNotifier,
+                  builder: (context, canUndo, _) {
+                    return ActionButtons(
+                      onDelete: () => _swiperKey.currentState?.swipeLeft(),
+                      onKeep: () => _swiperKey.currentState?.swipeRight(),
+                      onUndo: () => _swiperKey.currentState?.undo(),
+                      canUndo: canUndo,
+                      isLoading: false,
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -364,13 +360,49 @@ class _MediaSwiper extends StatefulWidget {
 
 class _MediaSwiperState extends State<_MediaSwiper> {
   final CardSwiperController _controller = CardSwiperController();
+  final _tiltNotifier = ValueNotifier<Offset>(Offset.zero);
+  StreamSubscription<AccelerometerEvent>? _accelSubscription;
+  Offset _baseline = Offset.zero;
+  bool _baselineSet = false;
+
+  static const _tiltStrength = 0.2;
+  static const _smoothing = 0.2;
+  static const _baselineDrift = 0.005;
 
   void swipeLeft() => _controller.swipe(CardSwiperDirection.left);
   void swipeRight() => _controller.swipe(CardSwiperDirection.right);
   void undo() => _controller.undo();
 
   @override
+  void initState() {
+    super.initState();
+    _accelSubscription = accelerometerEventStream(samplingPeriod: const Duration(milliseconds: 40))
+        .listen((event) {
+          if (!_baselineSet) {
+            _baseline = Offset(event.x, event.y);
+            _baselineSet = true;
+            return;
+          }
+
+          _baseline = Offset(
+            _baseline.dx + (event.x - _baseline.dx) * _baselineDrift,
+            _baseline.dy + (event.y - _baseline.dy) * _baselineDrift,
+          );
+
+          final targetX = ((event.x - _baseline.dx) / 5).clamp(-1.0, 1.0);
+          final targetY = ((event.y - _baseline.dy) / 5).clamp(-1.0, 1.0);
+          final current = _tiltNotifier.value;
+          _tiltNotifier.value = Offset(
+            current.dx + (targetX - current.dx) * _smoothing,
+            current.dy + (targetY - current.dy) * _smoothing,
+          );
+        });
+  }
+
+  @override
   void dispose() {
+    _accelSubscription?.cancel();
+    _tiltNotifier.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -378,10 +410,12 @@ class _MediaSwiperState extends State<_MediaSwiper> {
   @override
   Widget build(BuildContext context) {
     return CardSwiper(
+      allowedSwipeDirection: AllowedSwipeDirection.symmetric(horizontal: true),
       controller: _controller,
       cardsCount: widget.mediaItems.length,
-      numberOfCardsDisplayed: 1,
-      padding: const EdgeInsets.only(bottom: 24),
+      numberOfCardsDisplayed: widget.mediaItems.length >= 3 ? 3 : widget.mediaItems.length,
+      padding: const EdgeInsets.only(bottom: 40),
+      backCardOffset: Offset(0, 38),
       isLoop: false,
       duration: const Duration(milliseconds: 200),
       onSwipe: (previousIndex, currentIndex, direction) {
@@ -402,7 +436,23 @@ class _MediaSwiperState extends State<_MediaSwiper> {
       onEnd: widget.onFinished,
       cardBuilder: (context, index, horizontalThreshold, verticalThreshold) {
         if (index >= widget.mediaItems.length) return const SizedBox.shrink();
-        return MediaCard(mediaItem: widget.mediaItems[index]);
+        return ValueListenableBuilder<Offset>(
+          valueListenable: _tiltNotifier,
+          builder: (context, tilt, child) {
+            return Transform(
+              alignment: Alignment.center,
+              transform: Matrix4.identity()
+                ..setEntry(3, 2, 0.0007)
+                ..rotateX(tilt.dy * _tiltStrength)
+                ..rotateY(-tilt.dx * _tiltStrength),
+              child: child,
+            );
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: MediaCard(mediaItem: widget.mediaItems[index]),
+          ),
+        );
       },
     );
   }

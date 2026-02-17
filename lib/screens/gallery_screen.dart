@@ -255,8 +255,10 @@ class _AnimatedTitleState extends State<_AnimatedTitle> with SingleTickerProvide
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: const Duration(seconds: 8))..repeat();
-    _gyroSub = gyroscopeEventStream().listen((event) {
-      _gyroAngle += (event.x + event.y) * 0.08;
+    _gyroSub = gyroscopeEventStream(
+      samplingPeriod: const Duration(milliseconds: 40),
+    ).listen((event) {
+      _gyroAngle += (event.x + event.y + event.z) * 0.3;
     });
   }
 

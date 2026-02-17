@@ -198,8 +198,12 @@ class MediaService {
   }
 
   Future<int> deleteMultipleMedia(List<MediaItem> mediaItems) async {
+    final ids = mediaItems.map((m) => m.asset.id).toList();
+    return deleteByIds(ids);
+  }
+
+  Future<int> deleteByIds(List<String> ids) async {
     try {
-      final ids = mediaItems.map((m) => m.asset.id).toList();
       final List<String> result = await PhotoManager.editor.deleteWithIds(ids);
       return result.length;
     } catch (e) {

@@ -39,12 +39,10 @@ class ThumbnailCache {
 
   static Future<CachedMediaData> _loadThumbnail(MediaItem item) async {
     try {
-      final thumbnail = item.isVideo
-          ? null
-          : await item.asset.thumbnailDataWithSize(
-              const ThumbnailSize(800, 800),
-              quality: 90,
-            );
+      final thumbnail = await item.asset.thumbnailDataWithSize(
+        const ThumbnailSize(800, 800),
+        quality: 90,
+      );
 
       final data = CachedMediaData(thumbnail: thumbnail);
       _cache[item.asset.id] = data;
@@ -93,7 +91,8 @@ class MediaCard extends StatefulWidget {
 }
 
 class _MediaCardState extends State<MediaCard> {
-  CachedMediaData? _data;
+  final _dataNotifier = ValueNotifier<CachedMediaData?>(null);
+  final _isSharingNotifier = ValueNotifier<bool>(false);
 
   @override
   void initState() {
@@ -108,8 +107,9 @@ class _MediaCardState extends State<MediaCard> {
 
     final cached = ThumbnailCache.getCached(widget.mediaItem.asset.id);
     if (cached != null) {
-      _data = cached;
+      _dataNotifier.value = cached;
     } else {
+      _dataNotifier.value = null;
       _loadData();
     }
   }
@@ -117,21 +117,13 @@ class _MediaCardState extends State<MediaCard> {
   void _loadData() {
     final cached = ThumbnailCache.getCached(widget.mediaItem.asset.id);
     if (cached != null) {
-      _data = cached;
-      _loadFileSize();
+      _dataNotifier.value = cached;
       return;
     }
 
     ThumbnailCache.getMediaData(widget.mediaItem).then((data) {
       if (!mounted) return;
-      setState(() => _data = data);
-      _loadFileSize();
-    });
-  }
-
-  void _loadFileSize() {
-    ThumbnailCache.loadFileSize(widget.mediaItem).then((size) {
-      if (mounted && size > 0) setState(() {});
+      _dataNotifier.value = data;
     });
   }
 
@@ -183,47 +175,64 @@ class _MediaCardState extends State<MediaCard> {
   }
 
   Future<void> _shareMedia() async {
+    if (_isSharingNotifier.value) return;
+
     final box = context.findRenderObject() as RenderBox?;
     final origin = box != null
         ? box.localToGlobal(Offset.zero) & box.size
         : Rect.fromCenter(center: const Offset(200, 400), width: 100, height: 100);
 
-    final file = await widget.mediaItem.asset.file;
-    if (file == null || !mounted) return;
+    _isSharingNotifier.value = true;
 
-    await Share.shareXFiles([XFile(file.path)], sharePositionOrigin: origin);
+    try {
+      final file = await widget.mediaItem.asset.loadFile();
+      if (file == null || !mounted) {
+        _isSharingNotifier.value = false;
+        return;
+      }
+
+      await Share.shareXFiles([XFile(file.path)], sharePositionOrigin: origin);
+    } catch (_) {}
+
+    if (mounted) _isSharingNotifier.value = false;
+  }
+
+  @override
+  void dispose() {
+    _dataNotifier.dispose();
+    _isSharingNotifier.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final cachedData = _data ?? ThumbnailCache.getCached(widget.mediaItem.asset.id);
-    final thumbnail = cachedData?.thumbnail;
-
-    final Widget mediaContent;
-    if (widget.mediaItem.isLivePhoto) {
-      mediaContent = LivePhotoPreview(
-        mediaItem: widget.mediaItem,
-        thumbnail: thumbnail,
-      );
-    } else if (widget.mediaItem.isVideo) {
-      mediaContent = VideoPreview(mediaItem: widget.mediaItem);
-    } else if (thumbnail != null) {
-      mediaContent = Image.memory(thumbnail, fit: BoxFit.contain, gaplessPlayback: true);
-    } else {
-      mediaContent = Container(
-        color: const Color(0xFF0f0f1a),
-        child: const Center(
-          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-        ),
-      );
-    }
-
     return Container(
       color: const Color(0xFF0f0f1a),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          mediaContent,
+          ValueListenableBuilder<CachedMediaData?>(
+            valueListenable: _dataNotifier,
+            builder: (context, data, _) {
+              final cachedData = data ?? ThumbnailCache.getCached(widget.mediaItem.asset.id);
+              final thumbnail = cachedData?.thumbnail;
+
+              if (widget.mediaItem.isLivePhoto) {
+                return LivePhotoPreview(
+                  mediaItem: widget.mediaItem,
+                  thumbnail: thumbnail,
+                );
+              }
+              if (widget.mediaItem.isVideo) {
+                return VideoPreview(mediaItem: widget.mediaItem, thumbnail: thumbnail);
+              }
+
+              if (thumbnail != null) {
+                return Image.memory(thumbnail, fit: BoxFit.contain, gaplessPlayback: true);
+              }
+              return Container(color: const Color(0xFF0f0f1a));
+            },
+          ),
           Positioned(
             bottom: 12,
             right: 12,
@@ -231,7 +240,26 @@ class _MediaCardState extends State<MediaCard> {
               children: [
                 _CircleButton(icon: Icons.info_outline, onTap: _showInfoSheet),
                 const SizedBox(width: 10),
-                _CircleButton(icon: Icons.share, onTap: _shareMedia),
+                ValueListenableBuilder<bool>(
+                  valueListenable: _isSharingNotifier,
+                  builder: (context, isSharing, _) {
+                    if (isSharing) {
+                      return Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        ),
+                      );
+                    }
+                    return _CircleButton(icon: Icons.share, onTap: _shareMedia);
+                  },
+                ),
               ],
             ),
           ),
