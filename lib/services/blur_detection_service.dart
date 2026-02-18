@@ -125,14 +125,19 @@ class BlurDetectionService {
   }
 
   Future<double?> _calculateBlurScore(AssetEntity asset) async {
-    final thumbData = await asset.thumbnailDataWithSize(
-      const ThumbnailSize(_thumbnailSize, _thumbnailSize),
-      quality: 60,
-    );
+    try {
+      final thumbData = await asset.thumbnailDataWithSize(
+        const ThumbnailSize(_thumbnailSize, _thumbnailSize),
+        quality: 60,
+      );
 
-    if (thumbData == null) return null;
+      if (thumbData == null) return null;
 
-    return compute(_computeLaplacianVariance, thumbData);
+      return compute(_computeLaplacianVariance, thumbData);
+    } catch (e) {
+      debugPrint('Failed to calculate blur score for ${asset.id}: $e');
+      return null;
+    }
   }
 }
 
