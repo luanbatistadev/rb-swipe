@@ -303,6 +303,7 @@ class _MediaCardState extends State<MediaCard> {
                 return VideoPreview(
                   mediaItem: widget.mediaItem,
                   thumbnail: thumbnail,
+                  isFrontCard: widget.isFrontCard,
                 );
               }
 

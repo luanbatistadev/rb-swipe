@@ -12,8 +12,14 @@ import 'media_card.dart';
 class VideoPreview extends StatefulWidget {
   final MediaItem mediaItem;
   final Uint8List? thumbnail;
+  final bool isFrontCard;
 
-  const VideoPreview({super.key, required this.mediaItem, this.thumbnail});
+  const VideoPreview({
+    super.key,
+    required this.mediaItem,
+    this.thumbnail,
+    this.isFrontCard = false,
+  });
 
   @override
   State<VideoPreview> createState() => _VideoPreviewState();
@@ -27,6 +33,7 @@ class _VideoPreviewState extends State<VideoPreview> {
   final _controlsVisibleNotifier = ValueNotifier<bool>(true);
   final _downloadProgressNotifier = ValueNotifier<double?>(null);
   StreamSubscription<PMProgressState>? _progressSubscription;
+  Timer? _autoPlayTimer;
   bool _disposed = false;
 
   @override
@@ -34,12 +41,14 @@ class _VideoPreviewState extends State<VideoPreview> {
     super.initState();
     _thumbnailNotifier = ValueNotifier<Uint8List?>(widget.thumbnail);
     if (widget.thumbnail == null) _loadThumbnail();
+    if (widget.isFrontCard) _scheduleAutoPlay();
   }
 
   @override
   void didUpdateWidget(VideoPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.mediaItem.asset.id != widget.mediaItem.asset.id) {
+      _autoPlayTimer?.cancel();
       _cancelDownload();
       _controller?.dispose();
       _controller = null;
@@ -49,7 +58,24 @@ class _VideoPreviewState extends State<VideoPreview> {
       _downloadProgressNotifier.value = null;
       _thumbnailNotifier.value = widget.thumbnail;
       if (widget.thumbnail == null) _loadThumbnail();
+      if (widget.isFrontCard) _scheduleAutoPlay();
+      return;
     }
+    if (widget.isFrontCard && !oldWidget.isFrontCard) {
+      _scheduleAutoPlay();
+    }
+    if (!widget.isFrontCard && oldWidget.isFrontCard) {
+      _autoPlayTimer?.cancel();
+    }
+  }
+
+  void _scheduleAutoPlay() {
+    _autoPlayTimer?.cancel();
+    _autoPlayTimer = Timer(const Duration(milliseconds: 800), () {
+      if (_disposed || !mounted) return;
+      if (_isPlayingNotifier.value) return;
+      _togglePlay();
+    });
   }
 
   void _cancelDownload() {
@@ -134,6 +160,7 @@ class _VideoPreviewState extends State<VideoPreview> {
   @override
   void dispose() {
     _disposed = true;
+    _autoPlayTimer?.cancel();
     _cancelDownload();
     _controller?.dispose();
     _thumbnailNotifier.dispose();
