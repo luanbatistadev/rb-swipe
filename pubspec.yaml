@@ -1,7 +1,7 @@
 name: swipe
 description: "Swipe Cleaner - Organize suas fotos e vídeos"
 publish_to: "none"
-version: 0.0.30+30
+version: 0.0.31+31
 
 environment:
   sdk: ^3.9.0

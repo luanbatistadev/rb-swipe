@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:photo_manager/photo_manager.dart';
-import 'package:sensors_plus/sensors_plus.dart';
 
 import '../models/media_item.dart';
 import '../services/kept_media_service.dart';
@@ -379,56 +378,15 @@ class _MediaSwiper extends StatefulWidget {
 
 class _MediaSwiperState extends State<_MediaSwiper> {
   final CardSwiperController _controller = CardSwiperController();
-  final _tiltNotifier = ValueNotifier<Offset>(Offset.zero);
   final _isZoomedNotifier = ValueNotifier<bool>(false);
-  StreamSubscription<AccelerometerEvent>? _accelSubscription;
-  Offset _baseline = Offset.zero;
-  bool _baselineSet = false;
   int _currentIndex = 0;
-
-  static const _tiltStrength = 0.2;
-  static const _smoothing = 0.2;
-  static const _baselineDrift = 0.005;
 
   void swipeLeft() => _controller.swipe(CardSwiperDirection.left);
   void swipeRight() => _controller.swipe(CardSwiperDirection.right);
   void undo() => _controller.undo();
 
   @override
-  void initState() {
-    super.initState();
-    _accelSubscription =
-        accelerometerEventStream(
-          samplingPeriod: const Duration(milliseconds: 100),
-        ).listen((event) {
-          if (!_baselineSet) {
-            _baseline = Offset(event.x, event.y);
-            _baselineSet = true;
-            return;
-          }
-
-          _baseline = Offset(
-            _baseline.dx + (event.x - _baseline.dx) * _baselineDrift,
-            _baseline.dy + (event.y - _baseline.dy) * _baselineDrift,
-          );
-
-          final targetX = ((event.x - _baseline.dx) / 5).clamp(-1.0, 1.0);
-          final targetY = ((event.y - _baseline.dy) / 5).clamp(-1.0, 1.0);
-          final current = _tiltNotifier.value;
-          final newOffset = Offset(
-            current.dx + (targetX - current.dx) * _smoothing,
-            current.dy + (targetY - current.dy) * _smoothing,
-          );
-
-          if ((newOffset - current).distance < 0.005) return;
-          _tiltNotifier.value = newOffset;
-        });
-  }
-
-  @override
   void dispose() {
-    _accelSubscription?.cancel();
-    _tiltNotifier.dispose();
     _isZoomedNotifier.dispose();
     _controller.dispose();
     super.dispose();
@@ -495,20 +453,7 @@ class _MediaSwiperState extends State<_MediaSwiper> {
                   child: cardWidget,
                 );
 
-                return ValueListenableBuilder<Offset>(
-                  valueListenable: _tiltNotifier,
-                  builder: (context, tilt, child) {
-                    return Transform(
-                      alignment: Alignment.center,
-                      transform: Matrix4.identity()
-                        ..setEntry(3, 2, 0.0007)
-                        ..rotateX(tilt.dy * _tiltStrength)
-                        ..rotateY(-tilt.dx * _tiltStrength),
-                      child: child,
-                    );
-                  },
-                  child: zoomableCard,
-                );
+                return zoomableCard;
               },
         );
       },

@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 class GradientProgressIndicator extends StatefulWidget {
   final double? value;
   final double strokeWidth;
+  final double size;
 
   const GradientProgressIndicator({
     super.key,
     this.value,
     this.strokeWidth = 4.0,
+    this.size = 36.0,
   });
 
   @override
@@ -43,6 +45,7 @@ class _GradientProgressIndicatorState extends State<GradientProgressIndicator>
       builder: (context, _) {
         if (widget.value != null) {
           return CustomPaint(
+            size: Size.square(widget.size),
             painter: _DeterminatePainter(
               progress: widget.value!,
               rotation: _controller.value * 2 * pi,
@@ -51,6 +54,7 @@ class _GradientProgressIndicatorState extends State<GradientProgressIndicator>
           );
         }
         return CustomPaint(
+          size: Size.square(widget.size),
           painter: _IndeterminatePainter(
             rotation: _controller.value * 2 * pi,
             strokeWidth: widget.strokeWidth,

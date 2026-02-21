@@ -24,6 +24,7 @@ class _VideoPreviewState extends State<VideoPreview> {
   late final ValueNotifier<Uint8List?> _thumbnailNotifier;
   final _isInitializedNotifier = ValueNotifier<bool>(false);
   final _isPlayingNotifier = ValueNotifier<bool>(false);
+  final _controlsVisibleNotifier = ValueNotifier<bool>(true);
   final _downloadProgressNotifier = ValueNotifier<double?>(null);
   StreamSubscription<PMProgressState>? _progressSubscription;
   bool _disposed = false;
@@ -44,6 +45,7 @@ class _VideoPreviewState extends State<VideoPreview> {
       _controller = null;
       _isInitializedNotifier.value = false;
       _isPlayingNotifier.value = false;
+      _controlsVisibleNotifier.value = true;
       _downloadProgressNotifier.value = null;
       _thumbnailNotifier.value = widget.thumbnail;
       if (widget.thumbnail == null) _loadThumbnail();
@@ -120,10 +122,12 @@ class _VideoPreviewState extends State<VideoPreview> {
       await _controller!.pause();
       if (_disposed) return;
       _isPlayingNotifier.value = false;
+      _controlsVisibleNotifier.value = true;
     } else {
       await _controller!.play();
       if (_disposed) return;
       _isPlayingNotifier.value = true;
+      _controlsVisibleNotifier.value = false;
     }
   }
 
@@ -135,6 +139,7 @@ class _VideoPreviewState extends State<VideoPreview> {
     _thumbnailNotifier.dispose();
     _isInitializedNotifier.dispose();
     _isPlayingNotifier.dispose();
+    _controlsVisibleNotifier.dispose();
     _downloadProgressNotifier.dispose();
     super.dispose();
   }
@@ -184,9 +189,10 @@ class _VideoPreviewState extends State<VideoPreview> {
             ),
           ),
         ),
-        Center(
-          child: GestureDetector(
-            onTap: _togglePlay,
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _togglePlay,
+          child: Center(
             child: ValueListenableBuilder<double?>(
               valueListenable: _downloadProgressNotifier,
               builder: (context, downloadProgress, _) {
@@ -194,20 +200,26 @@ class _VideoPreviewState extends State<VideoPreview> {
                   return _ICloudDownloadIndicator(progress: downloadProgress);
                 }
                 return ValueListenableBuilder<bool>(
-                  valueListenable: _isPlayingNotifier,
-                  builder: (context, isPlaying, _) => AnimatedContainer(
+                  valueListenable: _controlsVisibleNotifier,
+                  builder: (context, visible, _) => AnimatedOpacity(
+                    opacity: visible ? 1.0 : 0.0,
                     duration: const Duration(milliseconds: 200),
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.6),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    child: Icon(
-                      isPlaying ? Icons.pause : Icons.play_arrow,
-                      color: Colors.white,
-                      size: 40,
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: _isPlayingNotifier,
+                        builder: (context, isPlaying, _) => Icon(
+                          isPlaying ? Icons.pause : Icons.play_arrow,
+                          color: Colors.white,
+                          size: 40,
+                        ),
+                      ),
                     ),
                   ),
                 );
