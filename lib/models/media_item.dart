@@ -28,9 +28,7 @@ class MediaItem {
   Future<int> get fileSizeAsync async {
     final file = await asset.file;
     if (file != null) return await file.length();
-
-    final bytes = await asset.originBytes;
-    return bytes?.length ?? 0;
+    return 0;
   }
 
   static String formatSize(int bytes) {

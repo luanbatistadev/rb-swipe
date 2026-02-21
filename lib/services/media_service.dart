@@ -68,15 +68,19 @@ class MediaService {
 
     final allPhotos = await albums.first.fetchPathProperties() ?? albums.first;
     final count = await allPhotos.assetCountAsync;
-    final assets = await allPhotos.getAssetListRange(start: 0, end: count);
+    const pageSize = 500;
 
     final Map<String, int> groups = {};
-    for (final asset in assets) {
-      if (_keptService.isKept(asset.id)) continue;
+    for (var start = 0; start < count; start += pageSize) {
+      final end = (start + pageSize).clamp(0, count);
+      final assets = await allPhotos.getAssetListRange(start: start, end: end);
+      for (final asset in assets) {
+        if (_keptService.isKept(asset.id)) continue;
 
-      final dt = asset.createDateTime;
-      final key = '${dt.year}-${dt.month}';
-      groups[key] = (groups[key] ?? 0) + 1;
+        final dt = asset.createDateTime;
+        final key = '${dt.year}-${dt.month}';
+        groups[key] = (groups[key] ?? 0) + 1;
+      }
     }
 
     return groups.entries
@@ -99,17 +103,21 @@ class MediaService {
 
     final allPhotos = await albums.first.fetchPathProperties() ?? albums.first;
     final count = await allPhotos.assetCountAsync;
-    final assets = await allPhotos.getAssetListRange(start: 0, end: count);
+    const pageSize = 500;
 
     final now = DateTime.now();
     final Map<int, int> yearCounts = {};
 
-    for (final asset in assets) {
-      if (_keptService.isKept(asset.id)) continue;
+    for (var start = 0; start < count; start += pageSize) {
+      final end = (start + pageSize).clamp(0, count);
+      final assets = await allPhotos.getAssetListRange(start: start, end: end);
+      for (final asset in assets) {
+        if (_keptService.isKept(asset.id)) continue;
 
-      final dt = asset.createDateTime;
-      if (dt.month == now.month && dt.day == now.day && dt.year != now.year) {
-        yearCounts[dt.year] = (yearCounts[dt.year] ?? 0) + 1;
+        final dt = asset.createDateTime;
+        if (dt.month == now.month && dt.day == now.day && dt.year != now.year) {
+          yearCounts[dt.year] = (yearCounts[dt.year] ?? 0) + 1;
+        }
       }
     }
 
@@ -191,10 +199,23 @@ class MediaService {
     final albums = await PhotoManager.getAssetPathList(type: RequestType.common, hasAll: true);
     if (albums.isEmpty) return [];
 
-    final assets = await albums.first.getAssetListRange(start: 0, end: 5000);
-    final filtered = assets.where((e) => !_keptService.isKept(e.id)).toList();
+    final album = albums.first;
+    final totalCount = await album.assetCountAsync;
+    const pageSize = 200;
+    const maxItems = 5000;
+    final List<MediaItem> result = [];
 
-    return filtered.map(MediaItem.fromAsset).toList();
+    for (var start = 0; start < totalCount && result.length < maxItems; start += pageSize) {
+      final end = (start + pageSize).clamp(0, totalCount);
+      final assets = await album.getAssetListRange(start: start, end: end);
+      for (final asset in assets) {
+        if (_keptService.isKept(asset.id)) continue;
+        result.add(MediaItem.fromAsset(asset));
+        if (result.length >= maxItems) break;
+      }
+    }
+
+    return result;
   }
 
   Future<int> deleteMultipleMedia(List<MediaItem> mediaItems) async {

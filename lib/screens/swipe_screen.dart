@@ -65,6 +65,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
   @override
   void dispose() {
     _keptService.flushPendingKept();
+    ThumbnailCache.clear();
     _screenStateNotifier.dispose();
     _deletedCountNotifier.dispose();
     _keptCountNotifier.dispose();
@@ -116,7 +117,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
       return;
     }
 
-    ThumbnailCache.preloadThumbnails(_mediaItems, 0, 5);
+    ThumbnailCache.preloadThumbnails(_mediaItems, 0, 10);
     _screenStateNotifier.value = ScreenState.swiping;
   }
 
@@ -304,7 +305,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
                       mediaItems: _mediaItems,
                       onSwipe: _onSwipe,
                       onUndo: _onUndo,
-                      onNeedMoreItems: (i) => ThumbnailCache.preloadThumbnails(_mediaItems, i, 5),
+                      onNeedMoreItems: (i) => ThumbnailCache.preloadThumbnails(_mediaItems, i, 10),
                       onFinished: _onFinished,
                     );
                 }
@@ -361,9 +362,11 @@ class _MediaSwiper extends StatefulWidget {
 class _MediaSwiperState extends State<_MediaSwiper> {
   final CardSwiperController _controller = CardSwiperController();
   final _tiltNotifier = ValueNotifier<Offset>(Offset.zero);
+  final _isZoomedNotifier = ValueNotifier<bool>(false);
   StreamSubscription<AccelerometerEvent>? _accelSubscription;
   Offset _baseline = Offset.zero;
   bool _baselineSet = false;
+  int _currentIndex = 0;
 
   static const _tiltStrength = 0.2;
   static const _smoothing = 0.2;
@@ -376,7 +379,7 @@ class _MediaSwiperState extends State<_MediaSwiper> {
   @override
   void initState() {
     super.initState();
-    _accelSubscription = accelerometerEventStream(samplingPeriod: const Duration(milliseconds: 40))
+    _accelSubscription = accelerometerEventStream(samplingPeriod: const Duration(milliseconds: 100))
         .listen((event) {
           if (!_baselineSet) {
             _baseline = Offset(event.x, event.y);
@@ -392,10 +395,13 @@ class _MediaSwiperState extends State<_MediaSwiper> {
           final targetX = ((event.x - _baseline.dx) / 5).clamp(-1.0, 1.0);
           final targetY = ((event.y - _baseline.dy) / 5).clamp(-1.0, 1.0);
           final current = _tiltNotifier.value;
-          _tiltNotifier.value = Offset(
+          final newOffset = Offset(
             current.dx + (targetX - current.dx) * _smoothing,
             current.dy + (targetY - current.dy) * _smoothing,
           );
+
+          if ((newOffset - current).distance < 0.005) return;
+          _tiltNotifier.value = newOffset;
         });
   }
 
@@ -403,55 +409,78 @@ class _MediaSwiperState extends State<_MediaSwiper> {
   void dispose() {
     _accelSubscription?.cancel();
     _tiltNotifier.dispose();
+    _isZoomedNotifier.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return CardSwiper(
-      allowedSwipeDirection: AllowedSwipeDirection.symmetric(horizontal: true),
-      controller: _controller,
-      cardsCount: widget.mediaItems.length,
-      numberOfCardsDisplayed: widget.mediaItems.length >= 3 ? 3 : widget.mediaItems.length,
-      padding: const EdgeInsets.only(bottom: 40),
-      backCardOffset: Offset(0, 38),
-      isLoop: false,
-      duration: const Duration(milliseconds: 200),
-      onSwipe: (previousIndex, currentIndex, direction) {
-        if (previousIndex < widget.mediaItems.length) {
-          widget.onSwipe(direction, widget.mediaItems[previousIndex]);
-        }
-        if (currentIndex != null && currentIndex < widget.mediaItems.length) {
-          widget.onNeedMoreItems(currentIndex);
-        }
-        return true;
-      },
-      onUndo: (previousIndex, currentIndex, direction) {
-        if (currentIndex < widget.mediaItems.length) {
-          widget.onUndo(direction, widget.mediaItems[currentIndex]);
-        }
-        return true;
-      },
-      onEnd: widget.onFinished,
-      cardBuilder: (context, index, horizontalThreshold, verticalThreshold) {
-        if (index >= widget.mediaItems.length) return const SizedBox.shrink();
-        return ValueListenableBuilder<Offset>(
-          valueListenable: _tiltNotifier,
-          builder: (context, tilt, child) {
-            return Transform(
-              alignment: Alignment.center,
-              transform: Matrix4.identity()
-                ..setEntry(3, 2, 0.0007)
-                ..rotateX(tilt.dy * _tiltStrength)
-                ..rotateY(-tilt.dx * _tiltStrength),
-              child: child,
+    return ValueListenableBuilder<bool>(
+      valueListenable: _isZoomedNotifier,
+      builder: (context, isZoomed, _) {
+        return CardSwiper(
+          allowedSwipeDirection: isZoomed
+              ? const AllowedSwipeDirection.none()
+              : const AllowedSwipeDirection.symmetric(horizontal: true),
+          controller: _controller,
+          cardsCount: widget.mediaItems.length,
+          numberOfCardsDisplayed: widget.mediaItems.length >= 3 ? 3 : widget.mediaItems.length,
+          padding: const EdgeInsets.only(bottom: 40),
+          backCardOffset: Offset(0, 38),
+          isLoop: false,
+          duration: const Duration(milliseconds: 200),
+          onSwipe: (previousIndex, currentIndex, direction) {
+            if (previousIndex < widget.mediaItems.length) {
+              widget.onSwipe(direction, widget.mediaItems[previousIndex]);
+            }
+            if (currentIndex != null && currentIndex < widget.mediaItems.length) {
+              _currentIndex = currentIndex;
+              widget.onNeedMoreItems(currentIndex);
+            }
+            return true;
+          },
+          onUndo: (previousIndex, currentIndex, direction) {
+            _currentIndex = currentIndex;
+            if (currentIndex < widget.mediaItems.length) {
+              widget.onUndo(direction, widget.mediaItems[currentIndex]);
+            }
+            return true;
+          },
+          onEnd: widget.onFinished,
+          cardBuilder: (context, index, horizontalThreshold, verticalThreshold) {
+            if (index >= widget.mediaItems.length) return const SizedBox.shrink();
+            final isFront = index == _currentIndex;
+
+            final cardWidget = RepaintBoundary(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: MediaCard(mediaItem: widget.mediaItems[index], isFrontCard: isFront),
+              ),
+            );
+
+            if (!isFront) return cardWidget;
+
+            final zoomableCard = _ZoomableWrapper(
+              onZoomChanged: (zoomed) => _isZoomedNotifier.value = zoomed,
+              child: cardWidget,
+            );
+
+            return ValueListenableBuilder<Offset>(
+              valueListenable: _tiltNotifier,
+              builder: (context, tilt, child) {
+                return Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, 0.0007)
+                    ..rotateX(tilt.dy * _tiltStrength)
+                    ..rotateY(-tilt.dx * _tiltStrength),
+                  child: child,
+                );
+              },
+              child: zoomableCard,
             );
           },
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: MediaCard(mediaItem: widget.mediaItems[index]),
-          ),
         );
       },
     );
@@ -745,6 +774,93 @@ class _StatBadge extends StatelessWidget {
             style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ZoomableWrapper extends StatefulWidget {
+  final Widget child;
+  final ValueChanged<bool> onZoomChanged;
+
+  const _ZoomableWrapper({required this.child, required this.onZoomChanged});
+
+  @override
+  State<_ZoomableWrapper> createState() => _ZoomableWrapperState();
+}
+
+class _ZoomableWrapperState extends State<_ZoomableWrapper>
+    with SingleTickerProviderStateMixin {
+  final _transformationController = TransformationController();
+  late final AnimationController _animationController;
+  Animation<Matrix4>? _animation;
+  TapDownDetails? _doubleTapDetails;
+
+  @override
+  void initState() {
+    super.initState();
+    _transformationController.addListener(_onTransformChanged);
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    )..addListener(_onAnimate);
+  }
+
+  void _onTransformChanged() {
+    final scale = _transformationController.value.getMaxScaleOnAxis();
+    widget.onZoomChanged(scale > 1.01);
+  }
+
+  void _onAnimate() {
+    if (_animation == null) return;
+    _transformationController.value = _animation!.value;
+  }
+
+  void _handleDoubleTapDown(TapDownDetails details) {
+    _doubleTapDetails = details;
+  }
+
+  void _handleDoubleTap() {
+    final Matrix4 end;
+    if (_transformationController.value.getMaxScaleOnAxis() > 1.01) {
+      end = Matrix4.identity();
+    } else {
+      final position = _doubleTapDetails?.localPosition ?? Offset.zero;
+      const s = 2.5;
+      final tx = position.dx * (1 - s);
+      final ty = position.dy * (1 - s);
+      end = Matrix4(s, 0, 0, 0, 0, s, 0, 0, 0, 0, 1, 0, tx, ty, 0, 1);
+    }
+
+    _animation = Matrix4Tween(
+      begin: _transformationController.value,
+      end: end,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOut,
+    ));
+    _animationController.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _animationController.removeListener(_onAnimate);
+    _animationController.dispose();
+    _transformationController.removeListener(_onTransformChanged);
+    _transformationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onDoubleTapDown: _handleDoubleTapDown,
+      onDoubleTap: _handleDoubleTap,
+      child: InteractiveViewer(
+        transformationController: _transformationController,
+        minScale: 1.0,
+        maxScale: 4.0,
+        child: widget.child,
       ),
     );
   }

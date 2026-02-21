@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 
 import '../models/media_item.dart';
+import 'media_card.dart';
 
 class VideoPreview extends StatefulWidget {
   final MediaItem mediaItem;
@@ -22,6 +24,8 @@ class _VideoPreviewState extends State<VideoPreview> {
   final _isInitializedNotifier = ValueNotifier<bool>(false);
   final _isPlayingNotifier = ValueNotifier<bool>(false);
   final _downloadProgressNotifier = ValueNotifier<double?>(null);
+  StreamSubscription<PMProgressState>? _progressSubscription;
+  bool _disposed = false;
 
   @override
   void initState() {
@@ -34,6 +38,7 @@ class _VideoPreviewState extends State<VideoPreview> {
   void didUpdateWidget(VideoPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.mediaItem.asset.id != widget.mediaItem.asset.id) {
+      _cancelDownload();
       _controller?.dispose();
       _controller = null;
       _isInitializedNotifier.value = false;
@@ -44,13 +49,18 @@ class _VideoPreviewState extends State<VideoPreview> {
     }
   }
 
+  void _cancelDownload() {
+    _progressSubscription?.cancel();
+    _progressSubscription = null;
+  }
+
   Future<void> _loadThumbnail() async {
     try {
       final thumb = await widget.mediaItem.asset.thumbnailDataWithSize(
-        const ThumbnailSize(800, 800),
-        quality: 90,
+        const ThumbnailSize(600, 600),
+        quality: 85,
       );
-      if (mounted) {
+      if (!_disposed && mounted) {
         _thumbnailNotifier.value = thumb;
       }
     } catch (_) {}
@@ -59,13 +69,13 @@ class _VideoPreviewState extends State<VideoPreview> {
   Future<void> _initializeVideo() async {
     try {
       final isLocal = await widget.mediaItem.asset.isLocallyAvailable();
-      if (!mounted) return;
+      if (_disposed || !mounted) return;
 
       final PMProgressHandler? progressHandler;
       if (!isLocal) {
         progressHandler = PMProgressHandler();
-        progressHandler.stream.listen((state) {
-          if (!mounted) return;
+        _progressSubscription = progressHandler.stream.listen((state) {
+          if (_disposed || !mounted) return;
           if (state.state == PMRequestState.loading) {
             _downloadProgressNotifier.value = state.progress;
           }
@@ -79,18 +89,19 @@ class _VideoPreviewState extends State<VideoPreview> {
         progressHandler: progressHandler,
       );
 
-      if (!mounted) return;
+      _cancelDownload();
+      if (_disposed || !mounted) return;
       _downloadProgressNotifier.value = null;
 
       if (file == null) return;
 
       _controller = VideoPlayerController.file(file);
       await _controller!.initialize();
-      if (mounted) {
-        _isInitializedNotifier.value = true;
-      }
+      if (_disposed || !mounted) return;
+      _isInitializedNotifier.value = true;
     } catch (_) {
-      if (mounted) _downloadProgressNotifier.value = null;
+      _cancelDownload();
+      if (!_disposed && mounted) _downloadProgressNotifier.value = null;
     }
   }
 
@@ -101,19 +112,23 @@ class _VideoPreviewState extends State<VideoPreview> {
       await _initializeVideo();
     }
 
-    if (_controller == null) return;
+    if (_controller == null || _disposed) return;
 
     if (_controller!.value.isPlaying) {
       await _controller!.pause();
+      if (_disposed) return;
       _isPlayingNotifier.value = false;
     } else {
       await _controller!.play();
+      if (_disposed) return;
       _isPlayingNotifier.value = true;
     }
   }
 
   @override
   void dispose() {
+    _disposed = true;
+    _cancelDownload();
     _controller?.dispose();
     _thumbnailNotifier.dispose();
     _isInitializedNotifier.dispose();
@@ -145,12 +160,10 @@ class _VideoPreviewState extends State<VideoPreview> {
                 _thumbnailNotifier.value!,
                 fit: BoxFit.contain,
                 gaplessPlayback: true,
+                cacheWidth: 600,
               );
             }
-            return Container(
-              color: Colors.black,
-              child: const Center(child: CircularProgressIndicator(color: Colors.white)),
-            );
+            return const ThumbnailPlaceholder();
           },
         ),
         Container(

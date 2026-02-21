@@ -711,10 +711,12 @@ class _DuplicateThumbState extends State<_DuplicateThumb> {
   }
 
   Future<void> _loadThumbnail() async {
-    final thumb = await widget.item.asset
-        .thumbnailDataWithSize(const ThumbnailSize(300, 300), quality: 85)
-        .timeout(const Duration(seconds: 5), onTimeout: () => null);
-    if (mounted && thumb != null) setState(() => _thumbnail = thumb);
+    try {
+      final thumb = await widget.item.asset
+          .thumbnailDataWithSize(const ThumbnailSize(300, 300), quality: 85)
+          .timeout(const Duration(seconds: 5), onTimeout: () => null);
+      if (mounted && thumb != null) setState(() => _thumbnail = thumb);
+    } catch (_) {}
   }
 
   Color get _borderColor {

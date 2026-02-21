@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -10,21 +11,37 @@ import 'video_preview.dart';
 
 class CachedMediaData {
   final Uint8List? thumbnail;
+  final Uint8List? lowResThumbnail;
   int fileSize;
 
-  CachedMediaData({this.thumbnail, this.fileSize = 0});
+  CachedMediaData({this.thumbnail, this.lowResThumbnail, this.fileSize = 0});
 }
 
 class ThumbnailCache {
-  static final Map<String, CachedMediaData> _cache = {};
+  static const _maxSize = 50;
+  static final LinkedHashMap<String, CachedMediaData> _cache = LinkedHashMap();
   static final Map<String, Future<CachedMediaData>> _loadingFutures = {};
 
-  static CachedMediaData? getCached(String id) => _cache[id];
+  static CachedMediaData? getCached(String id) {
+    final data = _cache.remove(id);
+    if (data == null) return null;
+    _cache[id] = data;
+    return data;
+  }
+
+  static void _put(String id, CachedMediaData data) {
+    _cache.remove(id);
+    _cache[id] = data;
+    while (_cache.length > _maxSize) {
+      _cache.remove(_cache.keys.first);
+    }
+  }
 
   static Future<CachedMediaData> getMediaData(MediaItem item) async {
     final id = item.asset.id;
 
-    if (_cache.containsKey(id)) return _cache[id]!;
+    final cached = getCached(id);
+    if (cached != null && cached.thumbnail != null) return cached;
     if (_loadingFutures.containsKey(id)) return _loadingFutures[id]!;
 
     final future = _loadThumbnail(item);
@@ -39,24 +56,34 @@ class ThumbnailCache {
 
   static Future<CachedMediaData> _loadThumbnail(MediaItem item) async {
     try {
-      final thumbnail = await item.asset.thumbnailDataWithSize(
-        const ThumbnailSize(800, 800),
-        quality: 90,
+      final lowRes = await item.asset.thumbnailDataWithSize(
+        const ThumbnailSize(50, 50),
+        quality: 50,
       );
 
-      final data = CachedMediaData(thumbnail: thumbnail);
-      _cache[item.asset.id] = data;
+      final existing = _cache[item.asset.id];
+      if (existing == null || existing.thumbnail == null) {
+        _put(item.asset.id, CachedMediaData(lowResThumbnail: lowRes));
+      }
+
+      final thumbnail = await item.asset.thumbnailDataWithSize(
+        const ThumbnailSize(600, 600),
+        quality: 85,
+      );
+
+      final data = CachedMediaData(thumbnail: thumbnail, lowResThumbnail: lowRes);
+      _put(item.asset.id, data);
       return data;
     } catch (_) {
       final data = CachedMediaData();
-      _cache[item.asset.id] = data;
+      _put(item.asset.id, data);
       return data;
     }
   }
 
   static Future<int> loadFileSize(MediaItem item) async {
     final id = item.asset.id;
-    final cached = _cache[id];
+    final cached = getCached(id);
     if (cached != null && cached.fileSize > 0) return cached.fileSize;
 
     final size = await item.fileSizeAsync;
@@ -69,7 +96,8 @@ class ThumbnailCache {
   static void preloadThumbnails(List<MediaItem> items, int startIndex, int count) {
     for (var i = startIndex; i < startIndex + count && i < items.length; i++) {
       final item = items[i];
-      if (!_cache.containsKey(item.asset.id)) {
+      final cached = _cache[item.asset.id];
+      if (cached == null || cached.thumbnail == null) {
         getMediaData(item);
       }
     }
@@ -83,8 +111,9 @@ class ThumbnailCache {
 
 class MediaCard extends StatefulWidget {
   final MediaItem mediaItem;
+  final bool isFrontCard;
 
-  const MediaCard({super.key, required this.mediaItem});
+  const MediaCard({super.key, required this.mediaItem, this.isFrontCard = false});
 
   @override
   State<MediaCard> createState() => _MediaCardState();
@@ -227,11 +256,13 @@ class _MediaCardState extends State<MediaCard> {
             builder: (context, data, _) {
               final cachedData = data ?? ThumbnailCache.getCached(widget.mediaItem.asset.id);
               final thumbnail = cachedData?.thumbnail;
+              final lowRes = cachedData?.lowResThumbnail;
 
               if (widget.mediaItem.isLivePhoto) {
                 return LivePhotoPreview(
                   mediaItem: widget.mediaItem,
                   thumbnail: thumbnail,
+                  isFrontCard: widget.isFrontCard,
                 );
               }
               if (widget.mediaItem.isVideo) {
@@ -239,9 +270,15 @@ class _MediaCardState extends State<MediaCard> {
               }
 
               if (thumbnail != null) {
-                return Image.memory(thumbnail, fit: BoxFit.contain, gaplessPlayback: true);
+                return Image.memory(thumbnail, fit: BoxFit.contain, gaplessPlayback: true, cacheWidth: 600);
               }
-              return Container(color: const Color(0xFF0f0f1a));
+              if (lowRes != null) {
+                return ImageFiltered(
+                  imageFilter: ColorFilter.mode(Colors.black.withValues(alpha: 0.1), BlendMode.darken),
+                  child: Image.memory(lowRes, fit: BoxFit.cover, gaplessPlayback: true),
+                );
+              }
+              return const ThumbnailPlaceholder();
             },
           ),
           Positioned(
@@ -336,6 +373,73 @@ class _InfoRow extends StatelessWidget {
           const Spacer(),
           Text(value, style: const TextStyle(color: Colors.white, fontSize: 14)),
         ],
+      ),
+    );
+  }
+}
+
+class ThumbnailPlaceholder extends StatefulWidget {
+  const ThumbnailPlaceholder({super.key});
+
+  @override
+  State<ThumbnailPlaceholder> createState() => _ThumbnailPlaceholderState();
+}
+
+class _ThumbnailPlaceholderState extends State<ThumbnailPlaceholder>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Container(
+          color: const Color(0xFF1a1a2e),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ShaderMask(
+                shaderCallback: (bounds) {
+                  return LinearGradient(
+                    begin: Alignment(-1.0 + 2.0 * _controller.value, 0),
+                    end: Alignment(-0.5 + 2.0 * _controller.value, 0),
+                    colors: const [
+                      Color(0x00FFFFFF),
+                      Color(0x15FFFFFF),
+                      Color(0x00FFFFFF),
+                    ],
+                  ).createShader(bounds);
+                },
+                blendMode: BlendMode.srcATop,
+                child: Container(color: const Color(0xFF1a1a2e)),
+              ),
+              child!,
+            ],
+          ),
+        );
+      },
+      child: Center(
+        child: Icon(
+          Icons.image_outlined,
+          size: 48,
+          color: Colors.white.withValues(alpha: 0.15),
+        ),
       ),
     );
   }

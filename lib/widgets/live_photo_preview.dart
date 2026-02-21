@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -6,15 +7,18 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 
 import '../models/media_item.dart';
+import 'media_card.dart';
 
 class LivePhotoPreview extends StatefulWidget {
   final MediaItem mediaItem;
   final Uint8List? thumbnail;
+  final bool isFrontCard;
 
   const LivePhotoPreview({
     super.key,
     required this.mediaItem,
     this.thumbnail,
+    this.isFrontCard = false,
   });
 
   @override
@@ -24,34 +28,46 @@ class LivePhotoPreview extends StatefulWidget {
 class _LivePhotoPreviewState extends State<LivePhotoPreview> {
   final _controllerNotifier = ValueNotifier<VideoPlayerController?>(null);
   final _downloadProgressNotifier = ValueNotifier<double?>(null);
+  StreamSubscription<PMProgressState>? _progressSubscription;
+  bool _disposed = false;
 
   @override
   void initState() {
     super.initState();
-    _loadVideo();
+    if (widget.isFrontCard) _loadVideo();
   }
 
   @override
   void didUpdateWidget(LivePhotoPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.mediaItem.asset.id == widget.mediaItem.asset.id) return;
+    if (oldWidget.mediaItem.asset.id != widget.mediaItem.asset.id) {
+      _cancelDownload();
+      _controllerNotifier.value?.dispose();
+      _controllerNotifier.value = null;
+      _downloadProgressNotifier.value = null;
+      if (widget.isFrontCard) _loadVideo();
+      return;
+    }
+    if (!oldWidget.isFrontCard && widget.isFrontCard) {
+      _loadVideo();
+    }
+  }
 
-    _controllerNotifier.value?.dispose();
-    _controllerNotifier.value = null;
-    _downloadProgressNotifier.value = null;
-    _loadVideo();
+  void _cancelDownload() {
+    _progressSubscription?.cancel();
+    _progressSubscription = null;
   }
 
   Future<void> _loadVideo() async {
     try {
       final isLocal = await widget.mediaItem.asset.isLocallyAvailable(withSubtype: true);
-      if (!mounted) return;
+      if (_disposed || !mounted) return;
 
       final PMProgressHandler? progressHandler;
       if (!isLocal) {
         progressHandler = PMProgressHandler();
-        progressHandler.stream.listen((state) {
-          if (!mounted) return;
+        _progressSubscription = progressHandler.stream.listen((state) {
+          if (_disposed || !mounted) return;
           if (state.state == PMRequestState.loading) {
             _downloadProgressNotifier.value = state.progress;
           }
@@ -66,7 +82,8 @@ class _LivePhotoPreviewState extends State<LivePhotoPreview> {
         progressHandler: progressHandler,
       );
 
-      if (!mounted) return;
+      _cancelDownload();
+      if (_disposed || !mounted) return;
       _downloadProgressNotifier.value = null;
 
       if (videoFile == null) return;
@@ -76,7 +93,7 @@ class _LivePhotoPreviewState extends State<LivePhotoPreview> {
       controller.setLooping(true);
       controller.setVolume(0);
 
-      if (!mounted) {
+      if (_disposed || !mounted) {
         controller.dispose();
         return;
       }
@@ -84,12 +101,15 @@ class _LivePhotoPreviewState extends State<LivePhotoPreview> {
       _controllerNotifier.value = controller;
       controller.play();
     } catch (_) {
-      if (mounted) _downloadProgressNotifier.value = null;
+      _cancelDownload();
+      if (!_disposed && mounted) _downloadProgressNotifier.value = null;
     }
   }
 
   @override
   void dispose() {
+    _disposed = true;
+    _cancelDownload();
     _controllerNotifier.value?.dispose();
     _controllerNotifier.dispose();
     _downloadProgressNotifier.dispose();
@@ -119,11 +139,10 @@ class _LivePhotoPreviewState extends State<LivePhotoPreview> {
                 widget.thumbnail!,
                 fit: BoxFit.contain,
                 gaplessPlayback: true,
+                cacheWidth: 600,
               );
             }
-            return const Center(
-              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-            );
+            return const ThumbnailPlaceholder();
           },
         ),
         Positioned(
