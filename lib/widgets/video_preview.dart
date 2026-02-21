@@ -33,22 +33,21 @@ class _VideoPreviewState extends State<VideoPreview> {
   final _controlsVisibleNotifier = ValueNotifier<bool>(true);
   final _downloadProgressNotifier = ValueNotifier<double?>(null);
   StreamSubscription<PMProgressState>? _progressSubscription;
-  Timer? _autoPlayTimer;
   bool _disposed = false;
+  bool _initializing = false;
 
   @override
   void initState() {
     super.initState();
     _thumbnailNotifier = ValueNotifier<Uint8List?>(widget.thumbnail);
     if (widget.thumbnail == null) _loadThumbnail();
-    if (widget.isFrontCard) _scheduleAutoPlay();
+    if (widget.isFrontCard) _togglePlay();
   }
 
   @override
   void didUpdateWidget(VideoPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.mediaItem.asset.id != widget.mediaItem.asset.id) {
-      _autoPlayTimer?.cancel();
       _cancelDownload();
       _controller?.dispose();
       _controller = null;
@@ -56,26 +55,11 @@ class _VideoPreviewState extends State<VideoPreview> {
       _isPlayingNotifier.value = false;
       _controlsVisibleNotifier.value = true;
       _downloadProgressNotifier.value = null;
+      _initializing = false;
       _thumbnailNotifier.value = widget.thumbnail;
       if (widget.thumbnail == null) _loadThumbnail();
-      if (widget.isFrontCard) _scheduleAutoPlay();
       return;
     }
-    if (widget.isFrontCard && !oldWidget.isFrontCard) {
-      _scheduleAutoPlay();
-    }
-    if (!widget.isFrontCard && oldWidget.isFrontCard) {
-      _autoPlayTimer?.cancel();
-    }
-  }
-
-  void _scheduleAutoPlay() {
-    _autoPlayTimer?.cancel();
-    _autoPlayTimer = Timer(const Duration(milliseconds: 800), () {
-      if (_disposed || !mounted) return;
-      if (_isPlayingNotifier.value) return;
-      _togglePlay();
-    });
   }
 
   void _cancelDownload() {
@@ -97,6 +81,8 @@ class _VideoPreviewState extends State<VideoPreview> {
   }
 
   Future<void> _initializeVideo() async {
+    if (_initializing) return;
+    _initializing = true;
     try {
       final isLocal = await widget.mediaItem.asset.isLocallyAvailable();
       if (_disposed || !mounted) return;
@@ -128,8 +114,12 @@ class _VideoPreviewState extends State<VideoPreview> {
       _controller = VideoPlayerController.file(file);
       await _controller!.initialize();
       if (_disposed || !mounted) return;
+      await _controller!.setLooping(true);
+      if (_disposed || !mounted) return;
       _isInitializedNotifier.value = true;
+      _initializing = false;
     } catch (_) {
+      _initializing = false;
       _cancelDownload();
       if (!_disposed && mounted) _downloadProgressNotifier.value = null;
     }
@@ -160,7 +150,6 @@ class _VideoPreviewState extends State<VideoPreview> {
   @override
   void dispose() {
     _disposed = true;
-    _autoPlayTimer?.cancel();
     _cancelDownload();
     _controller?.dispose();
     _thumbnailNotifier.dispose();

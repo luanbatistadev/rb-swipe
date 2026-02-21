@@ -125,6 +125,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
     }
 
     ThumbnailCache.preloadThumbnails(_mediaItems, 0, 10);
+    ThumbnailCache.preloadFiles(_mediaItems, 0, 5);
     _screenStateNotifier.value = ScreenState.swiping;
   }
 
@@ -321,8 +322,10 @@ class _SwipeScreenState extends State<SwipeScreen> {
                       mediaItems: _mediaItems,
                       onSwipe: _onSwipe,
                       onUndo: _onUndo,
-                      onNeedMoreItems: (i) =>
-                          ThumbnailCache.preloadThumbnails(_mediaItems, i, 10),
+                      onNeedMoreItems: (i) {
+                        ThumbnailCache.preloadThumbnails(_mediaItems, i, 10);
+                        ThumbnailCache.preloadFiles(_mediaItems, i + 1, 5);
+                      },
                       onFinished: _onFinished,
                     );
                 }
@@ -449,6 +452,7 @@ class _MediaSwiperState extends State<_MediaSwiper> {
                 if (!isFront) return cardWidget;
 
                 final zoomableCard = _ZoomableWrapper(
+                  key: ValueKey(widget.mediaItems[index].asset.id),
                   onZoomChanged: (zoomed) => _isZoomedNotifier.value = zoomed,
                   child: cardWidget,
                 );
@@ -820,7 +824,11 @@ class _ZoomableWrapper extends StatefulWidget {
   final Widget child;
   final ValueChanged<bool> onZoomChanged;
 
-  const _ZoomableWrapper({required this.child, required this.onZoomChanged});
+  const _ZoomableWrapper({
+    super.key,
+    required this.child,
+    required this.onZoomChanged,
+  });
 
   @override
   State<_ZoomableWrapper> createState() => _ZoomableWrapperState();
@@ -828,39 +836,59 @@ class _ZoomableWrapper extends StatefulWidget {
 
 class _ZoomableWrapperState extends State<_ZoomableWrapper>
     with SingleTickerProviderStateMixin {
-  final _transformationController = TransformationController();
   late final AnimationController _animationController;
   Animation<Matrix4>? _animation;
   TapDownDetails? _doubleTapDetails;
-  final _zoomActiveNotifier = ValueNotifier<bool>(false);
-  bool _zoomingOut = false;
+  final _transformNotifier = ValueNotifier<Matrix4>(Matrix4.identity());
+  final _zoomedNotifier = ValueNotifier<bool>(false);
+
+  Matrix4 _transform = Matrix4.identity();
+  double _scale = 1.0;
+  Offset _offset = Offset.zero;
+
+  final _pointers = <int, Offset>{};
+  double? _basePinchDistance;
+  double _basePinchScale = 1.0;
+  Offset _basePinchOffset = Offset.zero;
+  bool _pinching = false;
 
   @override
   void initState() {
     super.initState();
-    _transformationController.addListener(_onTransformChanged);
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 250),
-    )
-      ..addListener(_onAnimate)
-      ..addStatusListener(_onAnimationStatus);
+    )..addListener(_onAnimate);
   }
 
-  void _onTransformChanged() {
-    final scale = _transformationController.value.getMaxScaleOnAxis();
-    widget.onZoomChanged(scale > 1.01);
+  void _applyTransform() {
+    _transform = Matrix4.identity()
+      ..translateByDouble(_offset.dx, _offset.dy, 0, 0)
+      ..scaleByDouble(_scale, _scale, 1, 0);
+    _transformNotifier.value = _transform;
+    final zoomed = _scale > 1.01;
+    if (_zoomedNotifier.value != zoomed) {
+      _zoomedNotifier.value = zoomed;
+      widget.onZoomChanged(zoomed);
+    }
+  }
+
+  void _resetZoom() {
+    _scale = 1.0;
+    _offset = Offset.zero;
+    _applyTransform();
   }
 
   void _onAnimate() {
     if (_animation == null) return;
-    _transformationController.value = _animation!.value;
-  }
-
-  void _onAnimationStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed && _zoomingOut) {
-      _zoomingOut = false;
-      _zoomActiveNotifier.value = false;
+    _transform = _animation!.value;
+    _transformNotifier.value = _transform;
+    _scale = _transform.getMaxScaleOnAxis();
+    _offset = Offset(_transform.entry(0, 3), _transform.entry(1, 3));
+    final zoomed = _scale > 1.01;
+    if (_zoomedNotifier.value != zoomed) {
+      _zoomedNotifier.value = zoomed;
+      widget.onZoomChanged(zoomed);
     }
   }
 
@@ -870,62 +898,112 @@ class _ZoomableWrapperState extends State<_ZoomableWrapper>
 
   void _handleDoubleTap() {
     final Matrix4 end;
-    if (_transformationController.value.getMaxScaleOnAxis() > 1.01) {
+    if (_scale > 1.01) {
       end = Matrix4.identity();
-      _zoomingOut = true;
     } else {
       final position = _doubleTapDetails?.localPosition ?? Offset.zero;
       const s = 2.5;
       final tx = position.dx * (1 - s);
       final ty = position.dy * (1 - s);
       end = Matrix4(s, 0, 0, 0, 0, s, 0, 0, 0, 0, 1, 0, tx, ty, 0, 1);
-      _zoomingOut = false;
-      _zoomActiveNotifier.value = true;
     }
-
-    _animation = Matrix4Tween(begin: _transformationController.value, end: end)
-        .animate(
-          CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
-        );
+    _animation = Matrix4Tween(begin: _transform, end: end).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+    );
     _animationController.forward(from: 0);
   }
 
-  void _onInteractionEnd(ScaleEndDetails details) {
-    final scale = _transformationController.value.getMaxScaleOnAxis();
-    if (scale <= 1.01) {
-      _transformationController.value = Matrix4.identity();
-      _zoomActiveNotifier.value = false;
+  void _onPointerDown(PointerDownEvent event) {
+    _pointers[event.pointer] = event.localPosition;
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    final old = _pointers[event.pointer];
+    _pointers[event.pointer] = event.localPosition;
+
+    if (_pointers.length >= 2) {
+      _pinching = true;
+      final pts = _pointers.values.toList();
+      final distance = (pts[0] - pts[1]).distance;
+
+      if (_basePinchDistance == null) {
+        _basePinchDistance = distance;
+        _basePinchScale = _scale;
+        _basePinchOffset = _offset;
+        return;
+      }
+
+      final newScale = (_basePinchScale * distance / _basePinchDistance!).clamp(
+        1.0,
+        4.0,
+      );
+      final focal = (pts[0] + pts[1]) / 2;
+      final scaleDelta = newScale / _basePinchScale;
+      _scale = newScale;
+      _offset = focal - (focal - _basePinchOffset) * scaleDelta;
+      _clampOffset();
+      _applyTransform();
+      return;
     }
+
+    if (_scale > 1.01 && old != null && !_pinching) {
+      _offset += event.localPosition - old;
+      _clampOffset();
+      _applyTransform();
+    }
+  }
+
+  void _onPointerUpOrCancel(PointerEvent event) {
+    _pointers.remove(event.pointer);
+    if (_pointers.length < 2) {
+      _basePinchDistance = null;
+    }
+    if (_pointers.isEmpty) {
+      _pinching = false;
+      if (_scale <= 1.01) _resetZoom();
+    }
+  }
+
+  void _clampOffset() {
+    if (_scale <= 1.0) {
+      _offset = Offset.zero;
+      return;
+    }
+    final size = context.size;
+    if (size == null) return;
+    final maxX = size.width * (_scale - 1) / 2;
+    final maxY = size.height * (_scale - 1) / 2;
+    _offset = Offset(
+      _offset.dx.clamp(-maxX, maxX),
+      _offset.dy.clamp(-maxY, maxY),
+    );
   }
 
   @override
   void dispose() {
     _animationController.removeListener(_onAnimate);
-    _animationController.removeStatusListener(_onAnimationStatus);
     _animationController.dispose();
-    _transformationController.removeListener(_onTransformChanged);
-    _transformationController.dispose();
-    _zoomActiveNotifier.dispose();
+    _transformNotifier.dispose();
+    _zoomedNotifier.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onDoubleTapDown: _handleDoubleTapDown,
-      onDoubleTap: _handleDoubleTap,
-      child: ValueListenableBuilder<bool>(
-        valueListenable: _zoomActiveNotifier,
-        builder: (context, active, _) {
-          if (!active) return widget.child;
-          return InteractiveViewer(
-            transformationController: _transformationController,
-            minScale: 1.0,
-            maxScale: 4.0,
-            onInteractionEnd: _onInteractionEnd,
-            child: widget.child,
-          );
-        },
+    return Listener(
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerUpOrCancel,
+      onPointerCancel: _onPointerUpOrCancel,
+      child: GestureDetector(
+        onDoubleTapDown: _handleDoubleTapDown,
+        onDoubleTap: _handleDoubleTap,
+        child: ValueListenableBuilder<Matrix4>(
+          valueListenable: _transformNotifier,
+          builder: (context, transform, child) =>
+              Transform(transform: transform, child: child),
+          child: widget.child,
+        ),
       ),
     );
   }
