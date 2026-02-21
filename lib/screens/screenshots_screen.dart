@@ -8,6 +8,7 @@ import '../models/media_item.dart';
 import '../services/media_service.dart';
 import '../services/screenshot_detector_service.dart';
 import '../widgets/delete_confirm_dialog.dart';
+import '../widgets/gradient_progress_indicator.dart';
 import '../widgets/image_viewer.dart';
 
 const _backgroundColor = Color(0xFF0f0f1a);
@@ -211,7 +212,9 @@ class _ScreenshotsScreenState extends State<ScreenshotsScreen> {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         actions: [
-          if (_groups.isNotEmpty && _selectedToDelete.isNotEmpty && !_isDeleting)
+          if (_groups.isNotEmpty &&
+              _selectedToDelete.isNotEmpty &&
+              !_isDeleting)
             TextButton.icon(
               onPressed: _deleteSelected,
               icon: const Icon(Icons.delete, color: _deleteColor),
@@ -239,7 +242,11 @@ class _ErrorWidget extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.error_outline, size: 80, color: Colors.white.withValues(alpha: 0.3)),
+          Icon(
+            Icons.error_outline,
+            size: 80,
+            color: Colors.white.withValues(alpha: 0.3),
+          ),
           const SizedBox(height: 24),
           const Text(
             'Erro ao procurar screenshots',
@@ -258,7 +265,10 @@ class _ErrorWidget extends StatelessWidget {
           ElevatedButton(
             onPressed: onRetry,
             style: ElevatedButton.styleFrom(backgroundColor: _accentColor),
-            child: const Text('Tentar novamente', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Tentar novamente',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -275,7 +285,11 @@ class _EmptyWidget extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.screenshot, size: 80, color: Colors.white.withValues(alpha: 0.3)),
+          Icon(
+            Icons.screenshot,
+            size: 80,
+            color: Colors.white.withValues(alpha: 0.3),
+          ),
           const SizedBox(height: 24),
           const Text(
             'Nenhum screenshot encontrado',
@@ -297,13 +311,16 @@ class _DeletingWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(color: _accentColor),
-          SizedBox(height: 24),
-          Text('Apagando screenshots...', style: TextStyle(color: Colors.white)),
+          const GradientProgressIndicator(),
+          const SizedBox(height: 24),
+          const Text(
+            'Apagando screenshots...',
+            style: TextStyle(color: Colors.white),
+          ),
         ],
       ),
     );
@@ -342,10 +359,7 @@ class _ScreenshotsList extends StatelessWidget {
       itemCount: itemCount,
       itemBuilder: (context, index) {
         if (index == 0) {
-          return _ScreenshotsSummary(
-            groups: groups,
-            isScanning: isScanning,
-          );
+          return _ScreenshotsSummary(groups: groups, isScanning: isScanning);
         }
 
         if (isScanning && index == itemCount - 1) {
@@ -369,14 +383,14 @@ class _ScreenshotsSummary extends StatelessWidget {
   final List<ScreenshotGroup> groups;
   final bool isScanning;
 
-  const _ScreenshotsSummary({
-    required this.groups,
-    required this.isScanning,
-  });
+  const _ScreenshotsSummary({required this.groups, required this.isScanning});
 
   @override
   Widget build(BuildContext context) {
-    final totalScreenshots = groups.fold<int>(0, (sum, g) => sum + g.items.length);
+    final totalScreenshots = groups.fold<int>(
+      0,
+      (sum, g) => sum + g.items.length,
+    );
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
@@ -425,7 +439,7 @@ class _ScanningIndicator extends StatelessWidget {
           const SizedBox(
             width: 24,
             height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor),
+            child: GradientProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -439,7 +453,10 @@ class _ScanningIndicator extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '$progress / $total ($percent%)',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
@@ -455,7 +472,11 @@ class _SummaryItem extends StatelessWidget {
   final String value;
   final String label;
 
-  const _SummaryItem({required this.icon, required this.value, required this.label});
+  const _SummaryItem({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -463,8 +484,21 @@ class _SummaryItem extends StatelessWidget {
       children: [
         Icon(icon, color: _accentColor, size: 24),
         const SizedBox(height: 4),
-        Text(value, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.6),
+            fontSize: 12,
+          ),
+        ),
       ],
     );
   }
@@ -487,7 +521,9 @@ class _ScreenshotGroupCard extends StatelessWidget {
     required this.onOpenViewer,
   });
 
-  bool get _allSelected => group.items.isNotEmpty && group.items.every((i) => selectedToDelete.contains(i.asset.id));
+  bool get _allSelected =>
+      group.items.isNotEmpty &&
+      group.items.every((i) => selectedToDelete.contains(i.asset.id));
 
   @override
   Widget build(BuildContext context) {
@@ -510,17 +546,25 @@ class _ScreenshotGroupCard extends StatelessWidget {
                   children: [
                     Text(
                       group.label,
-                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       '${group.items.length} screenshots',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        fontSize: 12,
+                      ),
                     ),
                   ],
                 ),
                 TextButton(
-                  onPressed: () => _allSelected ? onDeselectAll(group) : onSelectAll(group),
+                  onPressed: () =>
+                      _allSelected ? onDeselectAll(group) : onSelectAll(group),
                   child: Text(
                     _allSelected ? 'Desmarcar todos' : 'Selecionar todos',
                     style: const TextStyle(color: _accentColor),
@@ -612,7 +656,9 @@ class _ScreenshotThumbState extends State<_ScreenshotThumb> {
                   ? Image.memory(_thumbnail!, fit: BoxFit.cover)
                   : Container(
                       color: const Color(0xFF2a2a3e),
-                      child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                      child: const Center(
+                        child: GradientProgressIndicator(strokeWidth: 2),
+                      ),
                     ),
             ),
             Positioned(
@@ -626,7 +672,11 @@ class _ScreenshotThumbState extends State<_ScreenshotThumb> {
                     color: Colors.black54,
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Icon(Icons.fullscreen, color: Colors.white, size: 16),
+                  child: const Icon(
+                    Icons.fullscreen,
+                    color: Colors.white,
+                    size: 16,
+                  ),
                 ),
               ),
             ),
@@ -637,7 +687,11 @@ class _ScreenshotThumbState extends State<_ScreenshotThumb> {
                   color: _deleteColor.withValues(alpha: 0.4),
                 ),
                 child: const Center(
-                  child: Icon(Icons.check_circle, color: Colors.white, size: 28),
+                  child: Icon(
+                    Icons.check_circle,
+                    color: Colors.white,
+                    size: 28,
+                  ),
                 ),
               ),
           ],
@@ -646,4 +700,3 @@ class _ScreenshotThumbState extends State<_ScreenshotThumb> {
     );
   }
 }
-

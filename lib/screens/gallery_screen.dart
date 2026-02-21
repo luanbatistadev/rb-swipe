@@ -6,6 +6,7 @@ import 'package:sensors_plus/sensors_plus.dart';
 
 import '../services/media_service.dart'
     show DateGroup, MediaService, OnThisDayGroup, fullMonthNames;
+import '../widgets/gradient_progress_indicator.dart';
 import 'blurry_photos_screen.dart';
 import 'duplicates_screen.dart';
 import 'screenshots_screen.dart';
@@ -68,27 +69,38 @@ class _GalleryScreenState extends State<GalleryScreen> {
           child: SizedBox(
             width: 24,
             height: 24,
-            child: CircularProgressIndicator(color: Colors.white24, strokeWidth: 2),
+            child: GradientProgressIndicator(strokeWidth: 2),
           ),
         ),
       );
     } else if (!_hasPermission) {
-      content = Expanded(child: _PermissionRequest(onRequestPermission: _loadGroups));
+      content = Expanded(
+        child: _PermissionRequest(onRequestPermission: _loadGroups),
+      );
     } else {
       content = Expanded(
         child: _MainContent(
           groups: _groups,
           onThisDayGroups: _onThisDayGroups,
-          onGroupSelected: (group) =>
-              _navigateAndReload(SwipeScreen(selectedDate: group.date, album: group.album)),
+          onGroupSelected: (group) => _navigateAndReload(
+            SwipeScreen(selectedDate: group.date, album: group.album),
+          ),
           onOnThisDaySelected: (group) => _navigateAndReload(
-            SwipeScreen(selectedDate: group.date, album: group.album, isOnThisDay: true),
+            SwipeScreen(
+              selectedDate: group.date,
+              album: group.album,
+              isOnThisDay: true,
+            ),
           ),
           onSwipeAllTap: () => _navigateAndReload(const SwipeScreen()),
-          onDuplicatesTap: () =>
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const DuplicatesScreen())),
-          onScreenshotsTap: () =>
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const ScreenshotsScreen())),
+          onDuplicatesTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const DuplicatesScreen()),
+          ),
+          onScreenshotsTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ScreenshotsScreen()),
+          ),
           onBlurryPhotosTap: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const BlurryPhotosScreen()),
@@ -103,7 +115,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(padding: EdgeInsets.fromLTRB(24, 20, 24, 0), child: _AnimatedTitle()),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 20, 24, 0),
+              child: _AnimatedTitle(),
+            ),
             content,
           ],
         ),
@@ -133,20 +148,30 @@ class _PermissionRequest extends StatelessWidget {
             const SizedBox(height: 32),
             const Text(
               'Acesso à Galeria',
-              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 12),
             Text(
               'Precisamos acessar suas fotos para organizar sua galeria.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 14,
+              ),
             ),
             const SizedBox(height: 40),
             TextButton(
               onPressed: onRequestPermission,
               style: TextButton.styleFrom(
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 14,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                   side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
@@ -201,7 +226,10 @@ class _MainContent extends StatelessWidget {
                 ),
                 if (onThisDayGroups.isNotEmpty) ...[
                   const SizedBox(height: 36),
-                  _OnThisDaySection(groups: onThisDayGroups, onGroupSelected: onOnThisDaySelected),
+                  _OnThisDaySection(
+                    groups: onThisDayGroups,
+                    onGroupSelected: onOnThisDaySelected,
+                  ),
                 ],
                 const SizedBox(height: 36),
                 Text(
@@ -225,7 +253,10 @@ class _MainContent extends StatelessWidget {
               final group = groups[index];
               return Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: _MonthCard(group: group, onTap: () => onGroupSelected(group)),
+                child: _MonthCard(
+                  group: group,
+                  onTap: () => onGroupSelected(group),
+                ),
               );
             }, childCount: groups.length),
           ),
@@ -243,7 +274,8 @@ class _AnimatedTitle extends StatefulWidget {
   State<_AnimatedTitle> createState() => _AnimatedTitleState();
 }
 
-class _AnimatedTitleState extends State<_AnimatedTitle> with SingleTickerProviderStateMixin {
+class _AnimatedTitleState extends State<_AnimatedTitle>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   StreamSubscription<GyroscopeEvent>? _gyroSub;
   double _gyroAngle = 0;
@@ -266,12 +298,16 @@ class _AnimatedTitleState extends State<_AnimatedTitle> with SingleTickerProvide
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 8))..repeat();
-    _gyroSub = gyroscopeEventStream(samplingPeriod: const Duration(milliseconds: 40)).listen((
-      event,
-    ) {
-      _gyroAngle += (event.x + event.y + event.z) * 0.3;
-    });
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 8),
+    )..repeat();
+    _gyroSub =
+        gyroscopeEventStream(
+          samplingPeriod: const Duration(milliseconds: 40),
+        ).listen((event) {
+          _gyroAngle += (event.x + event.y + event.z) * 0.3;
+        });
   }
 
   @override
@@ -287,7 +323,10 @@ class _AnimatedTitleState extends State<_AnimatedTitle> with SingleTickerProvide
       tag: 'rb-swipe-title',
       flightShuttleBuilder: (_, animation, __, ___, toHeroContext) {
         return FittedBox(
-          child: FadeTransition(opacity: animation, child: toHeroContext.widget),
+          child: FadeTransition(
+            opacity: animation,
+            child: toHeroContext.widget,
+          ),
         );
       },
       child: Material(
@@ -297,7 +336,11 @@ class _AnimatedTitleState extends State<_AnimatedTitle> with SingleTickerProvide
           children: [
             const Text(
               'RB ',
-              style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w300),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 32,
+                fontWeight: FontWeight.w300,
+              ),
             ),
             ListenableBuilder(
               listenable: _controller,
@@ -321,7 +364,11 @@ class _AnimatedTitleState extends State<_AnimatedTitle> with SingleTickerProvide
               },
               child: const Text(
                 'Swipe',
-                style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w700),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ],
@@ -369,7 +416,11 @@ class _ToolsSection extends StatelessWidget {
                     color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.swipe_rounded, color: Colors.white, size: 24),
+                  child: const Icon(
+                    Icons.swipe_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 16),
                 const Expanded(
@@ -392,7 +443,11 @@ class _ToolsSection extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white70, size: 18),
+                const Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: Colors.white70,
+                  size: 18,
+                ),
               ],
             ),
           ),
@@ -435,7 +490,11 @@ class _ToolCard extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  const _ToolCard({required this.icon, required this.label, required this.onTap});
+  const _ToolCard({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -473,7 +532,10 @@ class _OnThisDaySection extends StatelessWidget {
   final List<OnThisDayGroup> groups;
   final void Function(OnThisDayGroup) onGroupSelected;
 
-  const _OnThisDaySection({required this.groups, required this.onGroupSelected});
+  const _OnThisDaySection({
+    required this.groups,
+    required this.onGroupSelected,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -495,7 +557,10 @@ class _OnThisDaySection extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               '${now.day} ${fullMonthNames[now.month - 1]}',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 12),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.25),
+                fontSize: 12,
+              ),
             ),
           ],
         ),
@@ -508,7 +573,10 @@ class _OnThisDaySection extends StatelessWidget {
             separatorBuilder: (_, __) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
               final group = groups[index];
-              return _OnThisDayCard(group: group, onTap: () => onGroupSelected(group));
+              return _OnThisDayCard(
+                group: group,
+                onTap: () => onGroupSelected(group),
+              );
             },
           ),
         ),
@@ -548,7 +616,10 @@ class _OnThisDayCard extends StatelessWidget {
             ),
             Text(
               '${group.count} itens',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.4),
+                fontSize: 12,
+              ),
             ),
           ],
         ),
@@ -590,17 +661,27 @@ class _MonthCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     group.date.year.toString(),
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 13),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.4),
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),
             ),
             Text(
               '${group.count}',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 14,
+              ),
             ),
             const SizedBox(width: 8),
-            Icon(Icons.chevron_right, color: Colors.white.withValues(alpha: 0.3), size: 20),
+            Icon(
+              Icons.chevron_right,
+              color: Colors.white.withValues(alpha: 0.3),
+              size: 20,
+            ),
           ],
         ),
       ),

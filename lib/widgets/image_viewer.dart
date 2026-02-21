@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../models/media_item.dart';
+import 'gradient_progress_indicator.dart';
 
 const _cardColor = Color(0xFF1a1a2e);
 const _deleteColor = Color(0xFFFF4757);
@@ -183,9 +184,15 @@ class ViewerBottomBar extends StatelessWidget {
                     onPressed: onToggleSelection,
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Colors.white54),
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 16,
+                      ),
                     ),
-                    child: const Text('Desmarcar', style: TextStyle(color: Colors.white54)),
+                    child: const Text(
+                      'Desmarcar',
+                      style: TextStyle(color: Colors.white54),
+                    ),
                   ),
                 ],
               ],
@@ -240,9 +247,7 @@ class _FullImagePageState extends State<FullImagePage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return Center(
-        child: CircularProgressIndicator(color: widget.accentColor),
-      );
+      return Center(child: const GradientProgressIndicator());
     }
 
     if (_imageData == null) {
@@ -258,9 +263,7 @@ class _FullImagePageState extends State<FullImagePage> {
     return InteractiveViewer(
       minScale: 0.5,
       maxScale: 4.0,
-      child: Center(
-        child: Image.memory(_imageData!, fit: BoxFit.contain),
-      ),
+      child: Center(child: Image.memory(_imageData!, fit: BoxFit.contain)),
     );
   }
 }

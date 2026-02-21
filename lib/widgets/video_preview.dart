@@ -6,6 +6,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 
 import '../models/media_item.dart';
+import 'gradient_progress_indicator.dart';
 import 'media_card.dart';
 
 class VideoPreview extends StatefulWidget {
@@ -56,9 +57,10 @@ class _VideoPreviewState extends State<VideoPreview> {
 
   Future<void> _loadThumbnail() async {
     try {
+      final thumbSize = ThumbnailCache.deviceThumbnailSize;
       final thumb = await widget.mediaItem.asset.thumbnailDataWithSize(
-        const ThumbnailSize(600, 600),
-        quality: 85,
+        ThumbnailSize(thumbSize, thumbSize),
+        quality: 90,
       );
       if (!_disposed && mounted) {
         _thumbnailNotifier.value = thumb;
@@ -143,7 +145,10 @@ class _VideoPreviewState extends State<VideoPreview> {
       fit: StackFit.expand,
       children: [
         ListenableBuilder(
-          listenable: Listenable.merge([_thumbnailNotifier, _isInitializedNotifier]),
+          listenable: Listenable.merge([
+            _thumbnailNotifier,
+            _isInitializedNotifier,
+          ]),
           builder: (context, _) {
             if (_isInitializedNotifier.value && _controller != null) {
               return FittedBox(
@@ -156,11 +161,15 @@ class _VideoPreviewState extends State<VideoPreview> {
               );
             }
             if (_thumbnailNotifier.value != null) {
+              final physicalWidth =
+                  (MediaQuery.sizeOf(context).width *
+                          MediaQuery.devicePixelRatioOf(context))
+                      .toInt();
               return Image.memory(
                 _thumbnailNotifier.value!,
                 fit: BoxFit.contain,
                 gaplessPlayback: true,
-                cacheWidth: 600,
+                cacheWidth: physicalWidth,
               );
             }
             return const ThumbnailPlaceholder();
@@ -235,7 +244,9 @@ class _VideoPreviewState extends State<VideoPreview> {
         ValueListenableBuilder<bool>(
           valueListenable: _isInitializedNotifier,
           builder: (context, isInitialized, _) {
-            if (!isInitialized || _controller == null) return const SizedBox.shrink();
+            if (!isInitialized || _controller == null) {
+              return const SizedBox.shrink();
+            }
             return Positioned(
               bottom: 0,
               left: 0,
@@ -278,9 +289,8 @@ class _ICloudDownloadIndicator extends StatelessWidget {
           SizedBox(
             width: 50,
             height: 50,
-            child: CircularProgressIndicator(
+            child: GradientProgressIndicator(
               value: progress > 0 ? progress : null,
-              color: Colors.white,
               strokeWidth: 3,
             ),
           ),

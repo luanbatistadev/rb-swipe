@@ -7,6 +7,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 
 import '../models/media_item.dart';
+import 'gradient_progress_indicator.dart';
 import 'media_card.dart';
 
 class LivePhotoPreview extends StatefulWidget {
@@ -60,7 +61,9 @@ class _LivePhotoPreviewState extends State<LivePhotoPreview> {
 
   Future<void> _loadVideo() async {
     try {
-      final isLocal = await widget.mediaItem.asset.isLocallyAvailable(withSubtype: true);
+      final isLocal = await widget.mediaItem.asset.isLocallyAvailable(
+        withSubtype: true,
+      );
       if (_disposed || !mounted) return;
 
       final PMProgressHandler? progressHandler;
@@ -135,11 +138,15 @@ class _LivePhotoPreviewState extends State<LivePhotoPreview> {
               );
             }
             if (widget.thumbnail != null) {
+              final physicalWidth =
+                  (MediaQuery.sizeOf(context).width *
+                          MediaQuery.devicePixelRatioOf(context))
+                      .toInt();
               return Image.memory(
                 widget.thumbnail!,
                 fit: BoxFit.contain,
                 gaplessPlayback: true,
-                cacheWidth: 600,
+                cacheWidth: physicalWidth,
               );
             }
             return const ThumbnailPlaceholder();
@@ -178,7 +185,10 @@ class _LivePhotoPreviewState extends State<LivePhotoPreview> {
             if (progress == null) return const SizedBox.shrink();
             return Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(20),
@@ -189,14 +199,17 @@ class _LivePhotoPreviewState extends State<LivePhotoPreview> {
                     SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(
+                      child: GradientProgressIndicator(
                         value: progress > 0 ? progress : null,
-                        color: Colors.white,
                         strokeWidth: 2,
                       ),
                     ),
                     const SizedBox(width: 10),
-                    const Icon(Icons.cloud_download, color: Colors.white, size: 16),
+                    const Icon(
+                      Icons.cloud_download,
+                      color: Colors.white,
+                      size: 16,
+                    ),
                   ],
                 ),
               ),

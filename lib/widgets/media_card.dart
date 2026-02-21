@@ -6,6 +6,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/media_item.dart';
+import 'gradient_progress_indicator.dart';
 import 'live_photo_preview.dart';
 import 'video_preview.dart';
 
@@ -21,6 +22,16 @@ class ThumbnailCache {
   static const _maxSize = 50;
   static final LinkedHashMap<String, CachedMediaData> _cache = LinkedHashMap();
   static final Map<String, Future<CachedMediaData>> _loadingFutures = {};
+
+  static int get deviceThumbnailSize {
+    try {
+      final size =
+          WidgetsBinding.instance.platformDispatcher.views.first.physicalSize;
+      return size.shortestSide.toInt().clamp(800, 1600);
+    } catch (_) {
+      return 1200;
+    }
+  }
 
   static CachedMediaData? getCached(String id) {
     final data = _cache.remove(id);
@@ -66,12 +77,16 @@ class ThumbnailCache {
         _put(item.asset.id, CachedMediaData(lowResThumbnail: lowRes));
       }
 
+      final thumbSize = deviceThumbnailSize;
       final thumbnail = await item.asset.thumbnailDataWithSize(
-        const ThumbnailSize(600, 600),
-        quality: 85,
+        ThumbnailSize(thumbSize, thumbSize),
+        quality: 90,
       );
 
-      final data = CachedMediaData(thumbnail: thumbnail, lowResThumbnail: lowRes);
+      final data = CachedMediaData(
+        thumbnail: thumbnail,
+        lowResThumbnail: lowRes,
+      );
       _put(item.asset.id, data);
       return data;
     } catch (_) {
@@ -93,7 +108,11 @@ class ThumbnailCache {
     return size;
   }
 
-  static void preloadThumbnails(List<MediaItem> items, int startIndex, int count) {
+  static void preloadThumbnails(
+    List<MediaItem> items,
+    int startIndex,
+    int count,
+  ) {
     for (var i = startIndex; i < startIndex + count && i < items.length; i++) {
       final item = items[i];
       final cached = _cache[item.asset.id];
@@ -113,7 +132,11 @@ class MediaCard extends StatefulWidget {
   final MediaItem mediaItem;
   final bool isFrontCard;
 
-  const MediaCard({super.key, required this.mediaItem, this.isFrontCard = false});
+  const MediaCard({
+    super.key,
+    required this.mediaItem,
+    this.isFrontCard = false,
+  });
 
   @override
   State<MediaCard> createState() => _MediaCardState();
@@ -135,20 +158,15 @@ class _MediaCardState extends State<MediaCard> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.mediaItem.asset.id == widget.mediaItem.asset.id) return;
 
-    final cached = ThumbnailCache.getCached(widget.mediaItem.asset.id);
-    if (cached != null) {
-      _dataNotifier.value = cached;
-    } else {
-      _dataNotifier.value = null;
-      _loadData();
-    }
+    _dataNotifier.value = null;
+    _loadData();
   }
 
   void _loadData() {
     final cached = ThumbnailCache.getCached(widget.mediaItem.asset.id);
     if (cached != null) {
       _dataNotifier.value = cached;
-      return;
+      if (cached.thumbnail != null) return;
     }
 
     ThumbnailCache.getMediaData(widget.mediaItem).then((data) {
@@ -182,7 +200,11 @@ class _MediaCardState extends State<MediaCard> {
             ),
             const SizedBox(height: 20),
             _InfoRow(icon: Icons.title, label: 'Nome', value: item.title),
-            _InfoRow(icon: Icons.calendar_today, label: 'Data', value: item.formattedDate),
+            _InfoRow(
+              icon: Icons.calendar_today,
+              label: 'Data',
+              value: item.formattedDate,
+            ),
             FutureBuilder<int>(
               future: fileSizeFuture,
               builder: (_, snapshot) => _InfoRow(
@@ -193,11 +215,23 @@ class _MediaCardState extends State<MediaCard> {
                     : 'Calculando...',
               ),
             ),
-            _InfoRow(icon: Icons.aspect_ratio, label: 'Dimensoes', value: item.dimensions),
+            _InfoRow(
+              icon: Icons.aspect_ratio,
+              label: 'Dimensoes',
+              value: item.dimensions,
+            ),
             if (item.isVideo)
-              _InfoRow(icon: Icons.timer, label: 'Duracao', value: item.formattedDuration),
+              _InfoRow(
+                icon: Icons.timer,
+                label: 'Duracao',
+                value: item.formattedDuration,
+              ),
             if (item.isLivePhoto)
-              const _InfoRow(icon: Icons.motion_photos_on, label: 'Tipo', value: 'Live Photo'),
+              const _InfoRow(
+                icon: Icons.motion_photos_on,
+                label: 'Tipo',
+                value: 'Live Photo',
+              ),
           ],
         ),
       ),
@@ -207,7 +241,8 @@ class _MediaCardState extends State<MediaCard> {
   Future<void> _shareMedia() async {
     if (_isSharingNotifier.value) return;
 
-    final box = _shareButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final box =
+        _shareButtonKey.currentContext?.findRenderObject() as RenderBox?;
     final origin = box != null
         ? box.localToGlobal(Offset.zero) & box.size
         : null;
@@ -216,9 +251,7 @@ class _MediaCardState extends State<MediaCard> {
 
     try {
       final item = widget.mediaItem;
-      final file = await item.asset.loadFile(
-        withSubtype: item.isLivePhoto,
-      );
+      final file = await item.asset.loadFile(withSubtype: item.isLivePhoto);
 
       if (file == null || !mounted) {
         _isSharingNotifier.value = false;
@@ -228,9 +261,9 @@ class _MediaCardState extends State<MediaCard> {
       await Share.shareXFiles([XFile(file.path)], sharePositionOrigin: origin);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao compartilhar: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erro ao compartilhar: $e')));
       }
     }
 
@@ -254,7 +287,8 @@ class _MediaCardState extends State<MediaCard> {
           ValueListenableBuilder<CachedMediaData?>(
             valueListenable: _dataNotifier,
             builder: (context, data, _) {
-              final cachedData = data ?? ThumbnailCache.getCached(widget.mediaItem.asset.id);
+              final cachedData =
+                  data ?? ThumbnailCache.getCached(widget.mediaItem.asset.id);
               final thumbnail = cachedData?.thumbnail;
               final lowRes = cachedData?.lowResThumbnail;
 
@@ -266,16 +300,35 @@ class _MediaCardState extends State<MediaCard> {
                 );
               }
               if (widget.mediaItem.isVideo) {
-                return VideoPreview(mediaItem: widget.mediaItem, thumbnail: thumbnail);
+                return VideoPreview(
+                  mediaItem: widget.mediaItem,
+                  thumbnail: thumbnail,
+                );
               }
 
               if (thumbnail != null) {
-                return Image.memory(thumbnail, fit: BoxFit.contain, gaplessPlayback: true, cacheWidth: 600);
+                final physicalWidth =
+                    (MediaQuery.sizeOf(context).width *
+                            MediaQuery.devicePixelRatioOf(context))
+                        .toInt();
+                return Image.memory(
+                  thumbnail,
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
+                  cacheWidth: physicalWidth,
+                );
               }
               if (lowRes != null) {
                 return ImageFiltered(
-                  imageFilter: ColorFilter.mode(Colors.black.withValues(alpha: 0.1), BlendMode.darken),
-                  child: Image.memory(lowRes, fit: BoxFit.cover, gaplessPlayback: true),
+                  imageFilter: ColorFilter.mode(
+                    Colors.black.withValues(alpha: 0.1),
+                    BlendMode.darken,
+                  ),
+                  child: Image.memory(
+                    lowRes,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                  ),
                 );
               }
               return const ThumbnailPlaceholder();
@@ -301,11 +354,15 @@ class _MediaCardState extends State<MediaCard> {
                         child: const SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          child: GradientProgressIndicator(strokeWidth: 2),
                         ),
                       );
                     }
-                    return _CircleButton(key: _shareButtonKey, icon: Icons.share, onTap: _shareMedia);
+                    return _CircleButton(
+                      key: _shareButtonKey,
+                      icon: Icons.share,
+                      onTap: _shareMedia,
+                    );
                   },
                 ),
               ],
@@ -336,7 +393,8 @@ class _CircleButtonState extends State<_CircleButton> {
       behavior: HitTestBehavior.opaque,
       onPointerDown: (event) => _downPosition = event.position,
       onPointerUp: (event) {
-        if (_downPosition != null && (event.position - _downPosition!).distance < 20) {
+        if (_downPosition != null &&
+            (event.position - _downPosition!).distance < 20) {
           widget.onTap();
         }
         _downPosition = null;
@@ -359,7 +417,11 @@ class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
 
-  const _InfoRow({required this.icon, required this.label, required this.value});
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -369,9 +431,15 @@ class _InfoRow extends StatelessWidget {
         children: [
           Icon(icon, color: Colors.white54, size: 18),
           const SizedBox(width: 12),
-          Text(label, style: const TextStyle(color: Colors.white54, fontSize: 14)),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white54, fontSize: 14),
+          ),
           const Spacer(),
-          Text(value, style: const TextStyle(color: Colors.white, fontSize: 14)),
+          Text(
+            value,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+          ),
         ],
       ),
     );

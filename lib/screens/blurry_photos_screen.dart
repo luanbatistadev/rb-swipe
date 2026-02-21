@@ -8,6 +8,7 @@ import '../models/media_item.dart';
 import '../services/blur_detection_service.dart';
 import '../services/media_service.dart';
 import '../widgets/delete_confirm_dialog.dart';
+import '../widgets/gradient_progress_indicator.dart';
 import '../widgets/image_viewer.dart';
 
 const _backgroundColor = Color(0xFF0f0f1a);
@@ -196,7 +197,9 @@ class _BlurryPhotosScreenState extends State<BlurryPhotosScreen> {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         actions: [
-          if (_blurryPhotos.isNotEmpty && _selectedToDelete.isNotEmpty && !_isDeleting)
+          if (_blurryPhotos.isNotEmpty &&
+              _selectedToDelete.isNotEmpty &&
+              !_isDeleting)
             TextButton.icon(
               onPressed: _deleteSelected,
               icon: const Icon(Icons.delete, color: _deleteColor),
@@ -246,7 +249,11 @@ class _ErrorWidget extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.error_outline, size: 80, color: Colors.white.withValues(alpha: 0.3)),
+          Icon(
+            Icons.error_outline,
+            size: 80,
+            color: Colors.white.withValues(alpha: 0.3),
+          ),
           const SizedBox(height: 24),
           const Text(
             'Erro ao analisar fotos',
@@ -265,7 +272,10 @@ class _ErrorWidget extends StatelessWidget {
           ElevatedButton(
             onPressed: onRetry,
             style: ElevatedButton.styleFrom(backgroundColor: _accentColor),
-            child: const Text('Tentar novamente', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Tentar novamente',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -282,7 +292,11 @@ class _EmptyWidget extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.blur_off, size: 80, color: Colors.white.withValues(alpha: 0.3)),
+          Icon(
+            Icons.blur_off,
+            size: 80,
+            color: Colors.white.withValues(alpha: 0.3),
+          ),
           const SizedBox(height: 24),
           const Text(
             'Nenhuma foto borrada encontrada',
@@ -304,13 +318,16 @@ class _DeletingWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(color: _accentColor),
-          SizedBox(height: 24),
-          Text('Apagando fotos...', style: TextStyle(color: Colors.white)),
+          const GradientProgressIndicator(),
+          const SizedBox(height: 24),
+          const Text(
+            'Apagando fotos...',
+            style: TextStyle(color: Colors.white),
+          ),
         ],
       ),
     );
@@ -474,7 +491,7 @@ class _ScanningIndicator extends StatelessWidget {
           const SizedBox(
             width: 20,
             height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor),
+            child: GradientProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -488,7 +505,10 @@ class _ScanningIndicator extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   '$progress / $total ($percent%)',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 11,
+                  ),
                 ),
               ],
             ),
@@ -556,7 +576,7 @@ class _BlurryPhotoThumbState extends State<_BlurryPhotoThumb> {
                   : Container(
                       color: const Color(0xFF2a2a3e),
                       child: const Center(
-                        child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor),
+                        child: GradientProgressIndicator(strokeWidth: 2),
                       ),
                     ),
             ),
@@ -602,7 +622,11 @@ class _BlurryPhotoThumbState extends State<_BlurryPhotoThumb> {
                     color: Colors.black54,
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Icon(Icons.fullscreen, color: Colors.white, size: 16),
+                  child: const Icon(
+                    Icons.fullscreen,
+                    color: Colors.white,
+                    size: 16,
+                  ),
                 ),
               ),
             ),
@@ -613,7 +637,11 @@ class _BlurryPhotoThumbState extends State<_BlurryPhotoThumb> {
                   color: _deleteColor.withValues(alpha: 0.4),
                 ),
                 child: const Center(
-                  child: Icon(Icons.check_circle, color: Colors.white, size: 32),
+                  child: Icon(
+                    Icons.check_circle,
+                    color: Colors.white,
+                    size: 32,
+                  ),
                 ),
               ),
           ],
@@ -622,4 +650,3 @@ class _BlurryPhotoThumbState extends State<_BlurryPhotoThumb> {
     );
   }
 }
-

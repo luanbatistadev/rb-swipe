@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'gradient_progress_indicator.dart';
+
 class ActionButtons extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onKeep;
@@ -71,14 +73,21 @@ class _UndoButton extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: Colors.white.withValues(alpha: 0.1),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 2),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.3),
+                  width: 2,
+                ),
               ),
               child: const Icon(Icons.undo, color: Colors.white70, size: 24),
             ),
             const SizedBox(height: 8),
             const Text(
               'Voltar',
-              style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -108,14 +117,18 @@ class _ActionButton extends StatefulWidget {
   State<_ActionButton> createState() => _ActionButtonState();
 }
 
-class _ActionButtonState extends State<_ActionButton> with SingleTickerProviderStateMixin {
+class _ActionButtonState extends State<_ActionButton>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(duration: const Duration(milliseconds: 150), vsync: this);
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 150),
+      vsync: this,
+    );
     _scaleAnimation = Tween<double>(
       begin: 1.0,
       end: 0.9,
@@ -178,7 +191,7 @@ class _ActionButtonState extends State<_ActionButton> with SingleTickerProviderS
                       child: SizedBox(
                         width: 24,
                         height: 24,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        child: GradientProgressIndicator(strokeWidth: 2),
                       ),
                     )
                   : Icon(widget.icon, color: Colors.white, size: 32),

@@ -9,6 +9,7 @@ import '../services/duplicate_detector_service.dart';
 import '../services/kept_media_service.dart';
 import '../services/media_service.dart';
 import '../widgets/delete_confirm_dialog.dart';
+import '../widgets/gradient_progress_indicator.dart';
 import '../widgets/image_viewer.dart';
 
 const _backgroundColor = Color(0xFF0f0f1a);
@@ -178,10 +179,9 @@ class _DuplicatesScreenState extends State<DuplicatesScreen> {
             .where((item) => !_selectedToDelete.contains(item.asset.id))
             .toList();
         if (remainingItems.length > 1) {
-          updatedGroups.add(DuplicateGroup(
-            items: remainingItems,
-            totalSize: 0,
-          ));
+          updatedGroups.add(
+            DuplicateGroup(items: remainingItems, totalSize: 0),
+          );
         }
       }
       _groups = updatedGroups;
@@ -252,7 +252,9 @@ class _DuplicatesScreenState extends State<DuplicatesScreen> {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         actions: [
-          if (_groups.isNotEmpty && _selectedToDelete.isNotEmpty && !_isDeleting)
+          if (_groups.isNotEmpty &&
+              _selectedToDelete.isNotEmpty &&
+              !_isDeleting)
             TextButton.icon(
               onPressed: _deleteSelected,
               icon: const Icon(Icons.delete, color: _deleteColor),
@@ -280,7 +282,11 @@ class _ErrorWidget extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.error_outline, size: 80, color: Colors.white.withValues(alpha: 0.3)),
+          Icon(
+            Icons.error_outline,
+            size: 80,
+            color: Colors.white.withValues(alpha: 0.3),
+          ),
           const SizedBox(height: 24),
           const Text(
             'Erro ao analisar fotos',
@@ -299,7 +305,10 @@ class _ErrorWidget extends StatelessWidget {
           ElevatedButton(
             onPressed: onRetry,
             style: ElevatedButton.styleFrom(backgroundColor: _accentColor),
-            child: const Text('Tentar novamente', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Tentar novamente',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -316,7 +325,11 @@ class _EmptyWidget extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.check_circle_outline, size: 80, color: Colors.white.withValues(alpha: 0.3)),
+          Icon(
+            Icons.check_circle_outline,
+            size: 80,
+            color: Colors.white.withValues(alpha: 0.3),
+          ),
           const SizedBox(height: 24),
           const Text(
             'Nenhuma duplicata encontrada',
@@ -338,13 +351,16 @@ class _DeletingWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(color: Colors.white),
-          SizedBox(height: 24),
-          Text('Apagando arquivos...', style: TextStyle(color: Colors.white)),
+          const GradientProgressIndicator(),
+          const SizedBox(height: 24),
+          const Text(
+            'Apagando arquivos...',
+            style: TextStyle(color: Colors.white),
+          ),
         ],
       ),
     );
@@ -393,7 +409,11 @@ class _DuplicatesList extends StatelessWidget {
         }
 
         if (isScanning && index == itemCount - 1) {
-          return _ScanningIndicator(progress: progress, total: total, phase: phase);
+          return _ScanningIndicator(
+            progress: progress,
+            total: total,
+            phase: phase,
+          );
         }
 
         final group = groups[index - 1];
@@ -425,7 +445,10 @@ class _DuplicatesSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final totalDuplicates = groups.fold<int>(0, (sum, g) => sum + g.items.length - 1);
+    final totalDuplicates = groups.fold<int>(
+      0,
+      (sum, g) => sum + g.items.length - 1,
+    );
     final totalPhotos = groups.fold<int>(0, (sum, g) => sum + g.items.length);
     final suffix = isScanning ? '+' : '';
 
@@ -498,7 +521,7 @@ class _ScanningIndicator extends StatelessWidget {
           const SizedBox(
             width: 24,
             height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor),
+            child: GradientProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -512,7 +535,10 @@ class _ScanningIndicator extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '$progress / $total ($percent%)',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
@@ -528,7 +554,11 @@ class _SummaryItem extends StatelessWidget {
   final String value;
   final String label;
 
-  const _SummaryItem({required this.icon, required this.value, required this.label});
+  const _SummaryItem({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -536,8 +566,21 @@ class _SummaryItem extends StatelessWidget {
       children: [
         Icon(icon, color: _accentColor, size: 24),
         const SizedBox(height: 4),
-        Text(value, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.6),
+            fontSize: 12,
+          ),
+        ),
       ],
     );
   }
@@ -576,7 +619,9 @@ class _DuplicateGroupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final selectedInGroup = group.items.where((i) => selectedToDelete.contains(i.asset.id)).length;
+    final selectedInGroup = group.items
+        .where((i) => selectedToDelete.contains(i.asset.id))
+        .length;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -592,35 +637,51 @@ class _DuplicateGroupCard extends StatelessWidget {
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: _accentColor,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     '${group.items.length} fotos',
-                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     _dateTimeText,
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.6),
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 if (selectedInGroup > 0)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: _deleteColor.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         '$selectedInGroup selecionadas',
-                        style: const TextStyle(color: _deleteColor, fontSize: 11),
+                        style: const TextStyle(
+                          color: _deleteColor,
+                          fontSize: 11,
+                        ),
                       ),
                     ),
                   ),
@@ -628,7 +689,10 @@ class _DuplicateGroupCard extends StatelessWidget {
                   behavior: HitTestBehavior.opaque,
                   onTap: () => onKeepGroup(group),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     child: Text(
                       'Manter',
                       style: TextStyle(
@@ -743,7 +807,13 @@ class _DuplicateThumbState extends State<_DuplicateThumb> {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: _borderColor, width: _borderWidth),
           boxShadow: widget.isSelected
-              ? [BoxShadow(color: _deleteColor.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 1)]
+              ? [
+                  BoxShadow(
+                    color: _deleteColor.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  ),
+                ]
               : null,
         ),
         child: Stack(
@@ -759,7 +829,7 @@ class _DuplicateThumbState extends State<_DuplicateThumb> {
                         child: SizedBox(
                           width: 24,
                           height: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: _accentColor),
+                          child: GradientProgressIndicator(strokeWidth: 2),
                         ),
                       ),
                     ),
@@ -771,7 +841,11 @@ class _DuplicateThumbState extends State<_DuplicateThumb> {
                   color: _deleteColor.withValues(alpha: 0.5),
                 ),
                 child: const Center(
-                  child: Icon(Icons.check_circle, color: Colors.white, size: 40),
+                  child: Icon(
+                    Icons.check_circle,
+                    color: Colors.white,
+                    size: 40,
+                  ),
                 ),
               ),
             Positioned(
@@ -785,7 +859,11 @@ class _DuplicateThumbState extends State<_DuplicateThumb> {
                 ),
                 child: Text(
                   widget.isFirst ? 'Manter' : 'Cópia',
-                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
@@ -798,7 +876,11 @@ class _DuplicateThumbState extends State<_DuplicateThumb> {
                   color: Colors.black54,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Icon(Icons.fullscreen, color: Colors.white, size: 16),
+                child: const Icon(
+                  Icons.fullscreen,
+                  color: Colors.white,
+                  size: 16,
+                ),
               ),
             ),
           ],
