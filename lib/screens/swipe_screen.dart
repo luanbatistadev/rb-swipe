@@ -832,6 +832,8 @@ class _ZoomableWrapperState extends State<_ZoomableWrapper>
   late final AnimationController _animationController;
   Animation<Matrix4>? _animation;
   TapDownDetails? _doubleTapDetails;
+  final _zoomActiveNotifier = ValueNotifier<bool>(false);
+  bool _zoomingOut = false;
 
   @override
   void initState() {
@@ -840,7 +842,9 @@ class _ZoomableWrapperState extends State<_ZoomableWrapper>
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 250),
-    )..addListener(_onAnimate);
+    )
+      ..addListener(_onAnimate)
+      ..addStatusListener(_onAnimationStatus);
   }
 
   void _onTransformChanged() {
@@ -853,6 +857,13 @@ class _ZoomableWrapperState extends State<_ZoomableWrapper>
     _transformationController.value = _animation!.value;
   }
 
+  void _onAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed && _zoomingOut) {
+      _zoomingOut = false;
+      _zoomActiveNotifier.value = false;
+    }
+  }
+
   void _handleDoubleTapDown(TapDownDetails details) {
     _doubleTapDetails = details;
   }
@@ -861,12 +872,15 @@ class _ZoomableWrapperState extends State<_ZoomableWrapper>
     final Matrix4 end;
     if (_transformationController.value.getMaxScaleOnAxis() > 1.01) {
       end = Matrix4.identity();
+      _zoomingOut = true;
     } else {
       final position = _doubleTapDetails?.localPosition ?? Offset.zero;
       const s = 2.5;
       final tx = position.dx * (1 - s);
       final ty = position.dy * (1 - s);
       end = Matrix4(s, 0, 0, 0, 0, s, 0, 0, 0, 0, 1, 0, tx, ty, 0, 1);
+      _zoomingOut = false;
+      _zoomActiveNotifier.value = true;
     }
 
     _animation = Matrix4Tween(begin: _transformationController.value, end: end)
@@ -876,12 +890,22 @@ class _ZoomableWrapperState extends State<_ZoomableWrapper>
     _animationController.forward(from: 0);
   }
 
+  void _onInteractionEnd(ScaleEndDetails details) {
+    final scale = _transformationController.value.getMaxScaleOnAxis();
+    if (scale <= 1.01) {
+      _transformationController.value = Matrix4.identity();
+      _zoomActiveNotifier.value = false;
+    }
+  }
+
   @override
   void dispose() {
     _animationController.removeListener(_onAnimate);
+    _animationController.removeStatusListener(_onAnimationStatus);
     _animationController.dispose();
     _transformationController.removeListener(_onTransformChanged);
     _transformationController.dispose();
+    _zoomActiveNotifier.dispose();
     super.dispose();
   }
 
@@ -890,11 +914,18 @@ class _ZoomableWrapperState extends State<_ZoomableWrapper>
     return GestureDetector(
       onDoubleTapDown: _handleDoubleTapDown,
       onDoubleTap: _handleDoubleTap,
-      child: InteractiveViewer(
-        transformationController: _transformationController,
-        minScale: 1.0,
-        maxScale: 4.0,
-        child: widget.child,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _zoomActiveNotifier,
+        builder: (context, active, _) {
+          if (!active) return widget.child;
+          return InteractiveViewer(
+            transformationController: _transformationController,
+            minScale: 1.0,
+            maxScale: 4.0,
+            onInteractionEnd: _onInteractionEnd,
+            child: widget.child,
+          );
+        },
       ),
     );
   }
