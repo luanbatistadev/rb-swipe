@@ -125,7 +125,6 @@ class _SwipeScreenState extends State<SwipeScreen> {
     }
 
     ThumbnailCache.preloadThumbnails(_mediaItems, 0, 10);
-    ThumbnailCache.preloadFiles(_mediaItems, 0, 5);
     _screenStateNotifier.value = ScreenState.swiping;
   }
 
@@ -324,7 +323,6 @@ class _SwipeScreenState extends State<SwipeScreen> {
                       onUndo: _onUndo,
                       onNeedMoreItems: (i) {
                         ThumbnailCache.preloadThumbnails(_mediaItems, i, 10);
-                        ThumbnailCache.preloadFiles(_mediaItems, i + 1, 5);
                       },
                       onFinished: _onFinished,
                     );

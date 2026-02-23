@@ -108,8 +108,6 @@ class ThumbnailCache {
     return size;
   }
 
-  static final Set<String> _preloadingFiles = {};
-
   static void preloadThumbnails(
     List<MediaItem> items,
     int startIndex,
@@ -124,38 +122,9 @@ class ThumbnailCache {
     }
   }
 
-  static void preloadFiles(
-    List<MediaItem> items,
-    int startIndex,
-    int count,
-  ) {
-    for (var i = startIndex; i < startIndex + count && i < items.length; i++) {
-      final item = items[i];
-      if (!item.isVideo && !item.isLivePhoto) continue;
-      final id = item.asset.id;
-      if (_preloadingFiles.contains(id)) continue;
-      _preloadingFiles.add(id);
-      _preloadFile(item);
-    }
-  }
-
-  static Future<void> _preloadFile(MediaItem item) async {
-    try {
-      final isLocal = await item.asset.isLocallyAvailable(
-        withSubtype: item.isLivePhoto,
-      );
-      if (isLocal) return;
-      await item.asset.loadFile(withSubtype: item.isLivePhoto);
-    } catch (_) {
-    } finally {
-      _preloadingFiles.remove(item.asset.id);
-    }
-  }
-
   static void clear() {
     _cache.clear();
     _loadingFutures.clear();
-    _preloadingFiles.clear();
   }
 }
 
