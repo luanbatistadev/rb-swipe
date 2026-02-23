@@ -22,10 +22,10 @@ class VideoPreview extends StatefulWidget {
   });
 
   @override
-  State<VideoPreview> createState() => _VideoPreviewState();
+  VideoPreviewState createState() => VideoPreviewState();
 }
 
-class _VideoPreviewState extends State<VideoPreview> {
+class VideoPreviewState extends State<VideoPreview> {
   VideoPlayerController? _controller;
   late final ValueNotifier<Uint8List?> _thumbnailNotifier;
   final _isInitializedNotifier = ValueNotifier<bool>(false);
@@ -35,6 +35,20 @@ class _VideoPreviewState extends State<VideoPreview> {
   StreamSubscription<PMProgressState>? _progressSubscription;
   bool _disposed = false;
   bool _initializing = false;
+
+  void pause() {
+    if (_controller == null || !_controller!.value.isPlaying) return;
+    _controller!.pause();
+    _isPlayingNotifier.value = false;
+    _controlsVisibleNotifier.value = true;
+  }
+
+  void resume() {
+    if (_controller == null || _controller!.value.isPlaying) return;
+    _controller!.play();
+    _isPlayingNotifier.value = true;
+    _controlsVisibleNotifier.value = false;
+  }
 
   @override
   void initState() {
@@ -73,6 +87,7 @@ class _VideoPreviewState extends State<VideoPreview> {
       final thumb = await widget.mediaItem.asset.thumbnailDataWithSize(
         ThumbnailSize(thumbSize, thumbSize),
         quality: 90,
+        format: ThumbnailFormat.jpeg,
       );
       if (!_disposed && mounted) {
         _thumbnailNotifier.value = thumb;
@@ -101,9 +116,7 @@ class _VideoPreviewState extends State<VideoPreview> {
         progressHandler = null;
       }
 
-      final file = await widget.mediaItem.asset.loadFile(
-        progressHandler: progressHandler,
-      );
+      final file = await widget.mediaItem.asset.loadFile(progressHandler: progressHandler);
 
       _cancelDownload();
       if (_disposed || !mounted) return;
@@ -166,10 +179,7 @@ class _VideoPreviewState extends State<VideoPreview> {
       fit: StackFit.expand,
       children: [
         ListenableBuilder(
-          listenable: Listenable.merge([
-            _thumbnailNotifier,
-            _isInitializedNotifier,
-          ]),
+          listenable: Listenable.merge([_thumbnailNotifier, _isInitializedNotifier]),
           builder: (context, _) {
             if (_isInitializedNotifier.value && _controller != null) {
               return FittedBox(
@@ -183,8 +193,7 @@ class _VideoPreviewState extends State<VideoPreview> {
             }
             if (_thumbnailNotifier.value != null) {
               final physicalWidth =
-                  (MediaQuery.sizeOf(context).width *
-                          MediaQuery.devicePixelRatioOf(context))
+                  (MediaQuery.sizeOf(context).width * MediaQuery.devicePixelRatioOf(context))
                       .toInt();
               return Image.memory(
                 _thumbnailNotifier.value!,
@@ -317,10 +326,7 @@ class _ICloudDownloadIndicator extends StatelessWidget {
           SizedBox(
             width: 50,
             height: 50,
-            child: GradientProgressIndicator(
-              value: progress > 0 ? progress : null,
-              strokeWidth: 3,
-            ),
+            child: GradientProgressIndicator(value: progress > 0 ? progress : null, strokeWidth: 3),
           ),
           const Icon(Icons.cloud_download, color: Colors.white, size: 22),
         ],

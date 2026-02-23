@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../models/media_item.dart';
 import 'gradient_progress_indicator.dart';
 import 'live_photo_preview.dart';
+import 'media_zoom_page.dart';
 import 'video_preview.dart';
 
 class CachedMediaData {
@@ -25,8 +26,7 @@ class ThumbnailCache {
 
   static int get deviceThumbnailSize {
     try {
-      final size =
-          WidgetsBinding.instance.platformDispatcher.views.first.physicalSize;
+      final size = WidgetsBinding.instance.platformDispatcher.views.first.physicalSize;
       return size.shortestSide.toInt().clamp(800, 1600);
     } catch (_) {
       return 1200;
@@ -70,6 +70,7 @@ class ThumbnailCache {
       final lowRes = await item.asset.thumbnailDataWithSize(
         const ThumbnailSize(50, 50),
         quality: 50,
+        format: ThumbnailFormat.jpeg,
       );
 
       final existing = _cache[item.asset.id];
@@ -81,12 +82,10 @@ class ThumbnailCache {
       final thumbnail = await item.asset.thumbnailDataWithSize(
         ThumbnailSize(thumbSize, thumbSize),
         quality: 90,
+        format: ThumbnailFormat.jpeg,
       );
 
-      final data = CachedMediaData(
-        thumbnail: thumbnail,
-        lowResThumbnail: lowRes,
-      );
+      final data = CachedMediaData(thumbnail: thumbnail, lowResThumbnail: lowRes);
       _put(item.asset.id, data);
       return data;
     } catch (_) {
@@ -108,11 +107,7 @@ class ThumbnailCache {
     return size;
   }
 
-  static void preloadThumbnails(
-    List<MediaItem> items,
-    int startIndex,
-    int count,
-  ) {
+  static void preloadThumbnails(List<MediaItem> items, int startIndex, int count) {
     for (var i = startIndex; i < startIndex + count && i < items.length; i++) {
       final item = items[i];
       final cached = _cache[item.asset.id];
@@ -131,11 +126,15 @@ class ThumbnailCache {
 class MediaCard extends StatefulWidget {
   final MediaItem mediaItem;
   final bool isFrontCard;
+  final bool isFavorited;
+  final VoidCallback? onFavorite;
 
   const MediaCard({
     super.key,
     required this.mediaItem,
     this.isFrontCard = false,
+    this.isFavorited = false,
+    this.onFavorite,
   });
 
   @override
@@ -146,6 +145,8 @@ class _MediaCardState extends State<MediaCard> {
   final _dataNotifier = ValueNotifier<CachedMediaData?>(null);
   final _isSharingNotifier = ValueNotifier<bool>(false);
   final _shareButtonKey = GlobalKey();
+  final _videoKey = GlobalKey<VideoPreviewState>();
+  final _livePhotoKey = GlobalKey<LivePhotoPreviewState>();
 
   @override
   void initState() {
@@ -200,11 +201,7 @@ class _MediaCardState extends State<MediaCard> {
             ),
             const SizedBox(height: 20),
             _InfoRow(icon: Icons.title, label: 'Nome', value: item.title),
-            _InfoRow(
-              icon: Icons.calendar_today,
-              label: 'Data',
-              value: item.formattedDate,
-            ),
+            _InfoRow(icon: Icons.calendar_today, label: 'Data', value: item.formattedDate),
             FutureBuilder<int>(
               future: fileSizeFuture,
               builder: (_, snapshot) => _InfoRow(
@@ -215,25 +212,43 @@ class _MediaCardState extends State<MediaCard> {
                     : 'Calculando...',
               ),
             ),
-            _InfoRow(
-              icon: Icons.aspect_ratio,
-              label: 'Dimensoes',
-              value: item.dimensions,
-            ),
+            _InfoRow(icon: Icons.aspect_ratio, label: 'Dimensoes', value: item.dimensions),
             if (item.isVideo)
-              _InfoRow(
-                icon: Icons.timer,
-                label: 'Duracao',
-                value: item.formattedDuration,
-              ),
+              _InfoRow(icon: Icons.timer, label: 'Duracao', value: item.formattedDuration),
             if (item.isLivePhoto)
-              const _InfoRow(
-                icon: Icons.motion_photos_on,
-                label: 'Tipo',
-                value: 'Live Photo',
-              ),
+              const _InfoRow(icon: Icons.motion_photos_on, label: 'Tipo', value: 'Live Photo'),
           ],
         ),
+      ),
+    );
+  }
+
+  String get _heroTag => 'media_zoom_${widget.mediaItem.asset.id}';
+
+  Future<void> _openZoom() async {
+    if (widget.mediaItem.isVideo || widget.mediaItem.isLivePhoto) return;
+
+    final imageData = ThumbnailCache.getCached(widget.mediaItem.asset.id)?.thumbnail;
+    if (imageData == null || !mounted) return;
+
+    final fullResLoader = widget.mediaItem.asset.thumbnailDataWithSize(
+      const ThumbnailSize(4000, 4000),
+      quality: 100,
+    );
+
+    await Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        pageBuilder: (_, __, ___) => MediaZoomPage(
+          imageData: imageData,
+          heroTag: _heroTag,
+          fullResLoader: fullResLoader,
+        ),
+        transitionsBuilder: (_, animation, __, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 300),
+        reverseTransitionDuration: const Duration(milliseconds: 250),
       ),
     );
   }
@@ -241,11 +256,8 @@ class _MediaCardState extends State<MediaCard> {
   Future<void> _shareMedia() async {
     if (_isSharingNotifier.value) return;
 
-    final box =
-        _shareButtonKey.currentContext?.findRenderObject() as RenderBox?;
-    final origin = box != null
-        ? box.localToGlobal(Offset.zero) & box.size
-        : null;
+    final box = _shareButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final origin = box != null ? box.localToGlobal(Offset.zero) & box.size : null;
 
     _isSharingNotifier.value = true;
 
@@ -279,97 +291,112 @@ class _MediaCardState extends State<MediaCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF0f0f1a),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          ValueListenableBuilder<CachedMediaData?>(
-            valueListenable: _dataNotifier,
-            builder: (context, data, _) {
-              final cachedData =
-                  data ?? ThumbnailCache.getCached(widget.mediaItem.asset.id);
-              final thumbnail = cachedData?.thumbnail;
-              final lowRes = cachedData?.lowResThumbnail;
+    return GestureDetector(
+      onDoubleTap: _openZoom,
+      child: Container(
+        color: const Color(0xFF0f0f1a),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ValueListenableBuilder<CachedMediaData?>(
+              valueListenable: _dataNotifier,
+              builder: (context, data, _) {
+                final cachedData = data ?? ThumbnailCache.getCached(widget.mediaItem.asset.id);
+                final thumbnail = cachedData?.thumbnail;
+                final lowRes = cachedData?.lowResThumbnail;
 
-              if (widget.mediaItem.isLivePhoto) {
-                return LivePhotoPreview(
-                  mediaItem: widget.mediaItem,
-                  thumbnail: thumbnail,
-                  isFrontCard: widget.isFrontCard,
-                );
-              }
-              if (widget.mediaItem.isVideo) {
-                return VideoPreview(
-                  mediaItem: widget.mediaItem,
-                  thumbnail: thumbnail,
-                  isFrontCard: widget.isFrontCard,
-                );
-              }
+                if (widget.mediaItem.isLivePhoto) {
+                  return LivePhotoPreview(
+                    key: _livePhotoKey,
+                    mediaItem: widget.mediaItem,
+                    thumbnail: thumbnail,
+                    isFrontCard: widget.isFrontCard,
+                  );
+                }
+                if (widget.mediaItem.isVideo) {
+                  return VideoPreview(
+                    key: _videoKey,
+                    mediaItem: widget.mediaItem,
+                    thumbnail: thumbnail,
+                    isFrontCard: widget.isFrontCard,
+                  );
+                }
 
-              if (thumbnail != null) {
-                final physicalWidth =
-                    (MediaQuery.sizeOf(context).width *
-                            MediaQuery.devicePixelRatioOf(context))
-                        .toInt();
-                return Image.memory(
-                  thumbnail,
-                  fit: BoxFit.contain,
-                  gaplessPlayback: true,
-                  cacheWidth: physicalWidth,
-                );
-              }
-              if (lowRes != null) {
-                return ImageFiltered(
-                  imageFilter: ColorFilter.mode(
-                    Colors.black.withValues(alpha: 0.1),
-                    BlendMode.darken,
-                  ),
-                  child: Image.memory(
-                    lowRes,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                  ),
-                );
-              }
-              return const ThumbnailPlaceholder();
-            },
-          ),
-          Positioned(
-            bottom: 12,
-            right: 12,
-            child: Row(
-              children: [
-                _CircleButton(icon: Icons.info_outline, onTap: _showInfoSheet),
-                const SizedBox(width: 10),
-                ValueListenableBuilder<bool>(
-                  valueListenable: _isSharingNotifier,
-                  builder: (context, isSharing, _) {
-                    if (isSharing) {
-                      return Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.5),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: GradientProgressIndicator(strokeWidth: 2),
-                        ),
-                      );
-                    }
-                    return _CircleButton(
-                      key: _shareButtonKey,
-                      icon: Icons.share,
-                      onTap: _shareMedia,
-                    );
-                  },
-                ),
-              ],
+                if (thumbnail != null) {
+                  final physicalWidth =
+                      (MediaQuery.sizeOf(context).width * MediaQuery.devicePixelRatioOf(context))
+                          .toInt();
+                  return Hero(
+                    tag: _heroTag,
+                    child: SizedBox.expand(
+                      child: Image.memory(
+                        thumbnail,
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                        cacheWidth: physicalWidth,
+                      ),
+                    ),
+                  );
+                }
+                if (lowRes != null) {
+                  return ImageFiltered(
+                    imageFilter: ColorFilter.mode(
+                      Colors.black.withValues(alpha: 0.1),
+                      BlendMode.darken,
+                    ),
+                    child: Image.memory(lowRes, fit: BoxFit.cover, gaplessPlayback: true),
+                  );
+                }
+                return const ThumbnailPlaceholder();
+              },
             ),
-          ),
-        ],
+            if (widget.onFavorite != null)
+              Positioned(
+                top: 12,
+                left: 12,
+                child: _CircleButton(
+                  icon: widget.isFavorited ? Icons.star : Icons.star_outline,
+                  onTap: widget.onFavorite!,
+                  color: widget.isFavorited ? const Color(0xFFFFA502) : Colors.white,
+                  size: 24,
+                ),
+              ),
+            Positioned(
+              bottom: 12,
+              right: 12,
+              child: Row(
+                children: [
+                  _CircleButton(icon: Icons.info_outline, onTap: _showInfoSheet),
+                  const SizedBox(width: 10),
+                  ValueListenableBuilder<bool>(
+                    valueListenable: _isSharingNotifier,
+                    builder: (context, isSharing, _) {
+                      if (isSharing) {
+                        return Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: GradientProgressIndicator(strokeWidth: 2),
+                          ),
+                        );
+                      }
+                      return _CircleButton(
+                        key: _shareButtonKey,
+                        icon: Icons.share,
+                        onTap: _shareMedia,
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -378,8 +405,10 @@ class _MediaCardState extends State<MediaCard> {
 class _CircleButton extends StatefulWidget {
   final IconData icon;
   final VoidCallback onTap;
+  final Color color;
+  final double size;
 
-  const _CircleButton({super.key, required this.icon, required this.onTap});
+  const _CircleButton({super.key, required this.icon, required this.onTap, this.color = Colors.white, this.size = 20});
 
   @override
   State<_CircleButton> createState() => _CircleButtonState();
@@ -394,8 +423,7 @@ class _CircleButtonState extends State<_CircleButton> {
       behavior: HitTestBehavior.opaque,
       onPointerDown: (event) => _downPosition = event.position,
       onPointerUp: (event) {
-        if (_downPosition != null &&
-            (event.position - _downPosition!).distance < 20) {
+        if (_downPosition != null && (event.position - _downPosition!).distance < 20) {
           widget.onTap();
         }
         _downPosition = null;
@@ -407,7 +435,7 @@ class _CircleButtonState extends State<_CircleButton> {
           color: Colors.black.withValues(alpha: 0.5),
           shape: BoxShape.circle,
         ),
-        child: Icon(widget.icon, color: Colors.white, size: 20),
+        child: Icon(widget.icon, color: widget.color, size: widget.size),
       ),
     );
   }
@@ -418,11 +446,7 @@ class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
 
-  const _InfoRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
+  const _InfoRow({required this.icon, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
@@ -432,15 +456,9 @@ class _InfoRow extends StatelessWidget {
         children: [
           Icon(icon, color: Colors.white54, size: 18),
           const SizedBox(width: 12),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white54, fontSize: 14),
-          ),
+          Text(label, style: const TextStyle(color: Colors.white54, fontSize: 14)),
           const Spacer(),
-          Text(
-            value,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
-          ),
+          Text(value, style: const TextStyle(color: Colors.white, fontSize: 14)),
         ],
       ),
     );
@@ -461,10 +479,8 @@ class _ThumbnailPlaceholderState extends State<ThumbnailPlaceholder>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))
+      ..repeat();
   }
 
   @override
@@ -488,11 +504,7 @@ class _ThumbnailPlaceholderState extends State<ThumbnailPlaceholder>
                   return LinearGradient(
                     begin: Alignment(-1.0 + 2.0 * _controller.value, 0),
                     end: Alignment(-0.5 + 2.0 * _controller.value, 0),
-                    colors: const [
-                      Color(0x00FFFFFF),
-                      Color(0x15FFFFFF),
-                      Color(0x00FFFFFF),
-                    ],
+                    colors: const [Color(0x00FFFFFF), Color(0x15FFFFFF), Color(0x00FFFFFF)],
                   ).createShader(bounds);
                 },
                 blendMode: BlendMode.srcATop,
@@ -504,11 +516,7 @@ class _ThumbnailPlaceholderState extends State<ThumbnailPlaceholder>
         );
       },
       child: Center(
-        child: Icon(
-          Icons.image_outlined,
-          size: 48,
-          color: Colors.white.withValues(alpha: 0.15),
-        ),
+        child: Icon(Icons.image_outlined, size: 48, color: Colors.white.withValues(alpha: 0.15)),
       ),
     );
   }

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:photo_manager/photo_manager.dart';
 
 import '../models/media_item.dart';
@@ -62,15 +64,18 @@ class MediaService {
     return permission.isAuth;
   }
 
-  Future<List<DateGroup>> getAvailableMonths() async {
+  Future<({List<DateGroup> months, List<OnThisDayGroup> onThisDay})> loadGalleryData() async {
     final albums = await PhotoManager.getAssetPathList(type: RequestType.common, hasAll: true);
-    if (albums.isEmpty) return [];
+    if (albums.isEmpty) return (months: <DateGroup>[], onThisDay: <OnThisDayGroup>[]);
 
     final allPhotos = await albums.first.fetchPathProperties() ?? albums.first;
     final count = await allPhotos.assetCountAsync;
     const pageSize = 500;
 
-    final Map<String, int> groups = {};
+    final now = DateTime.now();
+    final Map<String, int> monthGroups = {};
+    final Map<int, int> onThisDayCounts = {};
+
     for (var start = 0; start < count; start += pageSize) {
       final end = (start + pageSize).clamp(0, count);
       final assets = await allPhotos.getAssetListRange(start: start, end: end);
@@ -79,11 +84,15 @@ class MediaService {
 
         final dt = asset.createDateTime;
         final key = '${dt.year}-${dt.month}';
-        groups[key] = (groups[key] ?? 0) + 1;
+        monthGroups[key] = (monthGroups[key] ?? 0) + 1;
+
+        if (dt.month == now.month && dt.day == now.day && dt.year != now.year) {
+          onThisDayCounts[dt.year] = (onThisDayCounts[dt.year] ?? 0) + 1;
+        }
       }
     }
 
-    return groups.entries
+    final months = monthGroups.entries
         .map((e) {
           final parts = e.key.split('-');
           return DateGroup(
@@ -95,33 +104,8 @@ class MediaService {
         .where((g) => g.count > 0)
         .toList()
       ..sort((a, b) => b.date.compareTo(a.date));
-  }
 
-  Future<List<OnThisDayGroup>> getOnThisDay() async {
-    final albums = await PhotoManager.getAssetPathList(type: RequestType.common, hasAll: true);
-    if (albums.isEmpty) return [];
-
-    final allPhotos = await albums.first.fetchPathProperties() ?? albums.first;
-    final count = await allPhotos.assetCountAsync;
-    const pageSize = 500;
-
-    final now = DateTime.now();
-    final Map<int, int> yearCounts = {};
-
-    for (var start = 0; start < count; start += pageSize) {
-      final end = (start + pageSize).clamp(0, count);
-      final assets = await allPhotos.getAssetListRange(start: start, end: end);
-      for (final asset in assets) {
-        if (_keptService.isKept(asset.id)) continue;
-
-        final dt = asset.createDateTime;
-        if (dt.month == now.month && dt.day == now.day && dt.year != now.year) {
-          yearCounts[dt.year] = (yearCounts[dt.year] ?? 0) + 1;
-        }
-      }
-    }
-
-    return yearCounts.entries
+    final onThisDay = onThisDayCounts.entries
         .map((e) => OnThisDayGroup(
               year: e.key,
               day: now.day,
@@ -131,6 +115,8 @@ class MediaService {
             ))
         .toList()
       ..sort((a, b) => b.year.compareTo(a.year));
+
+    return (months: months, onThisDay: onThisDay);
   }
 
   Future<List<MediaItem>> loadMediaByDayAndYear({
@@ -229,6 +215,28 @@ class MediaService {
       return result.length;
     } catch (e) {
       return 0;
+    }
+  }
+
+  Future<bool> setFavorite(AssetEntity asset, {required bool favorite}) async {
+    try {
+      if (Platform.isIOS || Platform.isMacOS) {
+        await PhotoManager.editor.darwin.favoriteAsset(
+          entity: asset,
+          favorite: favorite,
+        );
+        return true;
+      }
+      if (Platform.isAndroid) {
+        await PhotoManager.editor.android.favoriteAsset(
+          entity: asset,
+          favorite: favorite,
+        );
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
     }
   }
 }

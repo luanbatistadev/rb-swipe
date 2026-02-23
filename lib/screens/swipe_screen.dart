@@ -16,7 +16,6 @@ const _backgroundColor = Color(0xFF0f0f1a);
 const _accentColor = Color(0xFF6C5CE7);
 const _deleteColor = Color(0xFFFF4757);
 const _successColor = Color(0xFF2ED573);
-
 class _SwipeAction {
   final MediaItem item;
   final CardSwiperDirection direction;
@@ -29,12 +28,7 @@ class SwipeScreen extends StatefulWidget {
   final AssetPathEntity? album;
   final bool isOnThisDay;
 
-  const SwipeScreen({
-    super.key,
-    this.selectedDate,
-    this.album,
-    this.isOnThisDay = false,
-  });
+  const SwipeScreen({super.key, this.selectedDate, this.album, this.isOnThisDay = false});
 
   @override
   State<SwipeScreen> createState() => _SwipeScreenState();
@@ -46,13 +40,13 @@ class _SwipeScreenState extends State<SwipeScreen> {
   final _mediaService = MediaService();
   final _keptService = KeptMediaService();
 
-  final ValueNotifier<ScreenState> _screenStateNotifier = ValueNotifier(
-    ScreenState.loading,
-  );
+  final ValueNotifier<ScreenState> _screenStateNotifier = ValueNotifier(ScreenState.loading);
   final ValueNotifier<int> _deletedCountNotifier = ValueNotifier(0);
   final ValueNotifier<int> _keptCountNotifier = ValueNotifier(0);
   final ValueNotifier<int> _totalCountNotifier = ValueNotifier(0);
   final ValueNotifier<bool> _canUndoNotifier = ValueNotifier(false);
+
+  final ValueNotifier<Set<String>> _favoritedIdsNotifier = ValueNotifier({});
 
   List<MediaItem> _mediaItems = [];
   final List<MediaItem> _itemsToDelete = [];
@@ -78,6 +72,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
     _keptCountNotifier.dispose();
     _totalCountNotifier.dispose();
     _canUndoNotifier.dispose();
+    _favoritedIdsNotifier.dispose();
     super.dispose();
   }
 
@@ -88,6 +83,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
     _deletedCountNotifier.value = 0;
     _keptCountNotifier.value = 0;
     _canUndoNotifier.value = false;
+    _favoritedIdsNotifier.value = {};
     _mediaItems = [];
     _swiperKey = GlobalKey();
 
@@ -124,7 +120,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
       return;
     }
 
-    ThumbnailCache.preloadThumbnails(_mediaItems, 0, 10);
+    ThumbnailCache.preloadThumbnails(_mediaItems, 0, 5);
     _screenStateNotifier.value = ScreenState.swiping;
   }
 
@@ -144,10 +140,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
       case CardSwiperDirection.left:
         _itemsToDelete.add(item);
         _deletedCountNotifier.value++;
-        Future.delayed(
-          const Duration(milliseconds: 300),
-          () => _cacheFileSize(item),
-        );
+        Future.delayed(const Duration(milliseconds: 300), () => _cacheFileSize(item));
         _checkBatchDelete();
       case CardSwiperDirection.right:
         _keptService.trackKept(item.asset.id);
@@ -224,10 +217,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$deletedCount arquivos apagados'),
-        backgroundColor: _successColor,
-      ),
+      SnackBar(content: Text('$deletedCount arquivos apagados'), backgroundColor: _successColor),
     );
   }
 
@@ -256,6 +246,21 @@ class _SwipeScreenState extends State<SwipeScreen> {
     }
 
     _showDeleteDialog(isFinal: true);
+  }
+
+  void _onToggleFavorite(MediaItem item) {
+    final id = item.asset.id;
+    final toggled = Set<String>.from(_favoritedIdsNotifier.value);
+
+    if (toggled.contains(id)) {
+      toggled.remove(id);
+    } else {
+      toggled.add(id);
+    }
+
+    _favoritedIdsNotifier.value = toggled;
+    final newFavorite = toggled.contains(id) != item.asset.isFavorite;
+    _mediaService.setFavorite(item.asset, favorite: newFavorite);
   }
 
   Future<void> _onDeleteBadgeTap() async {
@@ -301,10 +306,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
                   case ScreenState.loading:
                     return const _LoadingWidget();
                   case ScreenState.noPermission:
-                    return _PermissionError(
-                      errorMessage: _errorMessage,
-                      onRetry: _initialize,
-                    );
+                    return _PermissionError(errorMessage: _errorMessage, onRetry: _initialize);
                   case ScreenState.empty:
                   case ScreenState.finished:
                     return _FinishedScreen(
@@ -319,10 +321,12 @@ class _SwipeScreenState extends State<SwipeScreen> {
                     return _MediaSwiper(
                       key: _swiperKey,
                       mediaItems: _mediaItems,
+                      favoritedIdsNotifier: _favoritedIdsNotifier,
+                      onToggleFavorite: _onToggleFavorite,
                       onSwipe: _onSwipe,
                       onUndo: _onUndo,
                       onNeedMoreItems: (i) {
-                        ThumbnailCache.preloadThumbnails(_mediaItems, i, 10);
+                        ThumbnailCache.preloadThumbnails(_mediaItems, i, 5);
                       },
                       onFinished: _onFinished,
                     );
@@ -359,6 +363,8 @@ class _SwipeScreenState extends State<SwipeScreen> {
 
 class _MediaSwiper extends StatefulWidget {
   final List<MediaItem> mediaItems;
+  final ValueNotifier<Set<String>> favoritedIdsNotifier;
+  final void Function(MediaItem item) onToggleFavorite;
   final void Function(CardSwiperDirection direction, MediaItem item) onSwipe;
   final void Function(CardSwiperDirection direction, MediaItem item) onUndo;
   final void Function(int currentIndex) onNeedMoreItems;
@@ -367,6 +373,8 @@ class _MediaSwiper extends StatefulWidget {
   const _MediaSwiper({
     super.key,
     required this.mediaItems,
+    required this.favoritedIdsNotifier,
+    required this.onToggleFavorite,
     required this.onSwipe,
     required this.onUndo,
     required this.onNeedMoreItems,
@@ -379,7 +387,6 @@ class _MediaSwiper extends StatefulWidget {
 
 class _MediaSwiperState extends State<_MediaSwiper> {
   final CardSwiperController _controller = CardSwiperController();
-  final _isZoomedNotifier = ValueNotifier<bool>(false);
   int _currentIndex = 0;
 
   void swipeLeft() => _controller.swipe(CardSwiperDirection.left);
@@ -388,75 +395,61 @@ class _MediaSwiperState extends State<_MediaSwiper> {
 
   @override
   void dispose() {
-    _isZoomedNotifier.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: _isZoomedNotifier,
-      builder: (context, isZoomed, _) {
-        return CardSwiper(
-          allowedSwipeDirection: isZoomed
-              ? const AllowedSwipeDirection.none()
-              : const AllowedSwipeDirection.symmetric(horizontal: true),
-          controller: _controller,
-          cardsCount: widget.mediaItems.length,
-          numberOfCardsDisplayed: widget.mediaItems.length >= 3
-              ? 3
-              : widget.mediaItems.length,
-          padding: const EdgeInsets.only(bottom: 40),
-          backCardOffset: Offset(0, 38),
-          isLoop: false,
-          duration: const Duration(milliseconds: 200),
-          onSwipe: (previousIndex, currentIndex, direction) {
-            if (previousIndex < widget.mediaItems.length) {
-              widget.onSwipe(direction, widget.mediaItems[previousIndex]);
-            }
-            if (currentIndex != null &&
-                currentIndex < widget.mediaItems.length) {
-              _currentIndex = currentIndex;
-              widget.onNeedMoreItems(currentIndex);
-            }
-            return true;
-          },
-          onUndo: (previousIndex, currentIndex, direction) {
-            _currentIndex = currentIndex;
-            if (currentIndex < widget.mediaItems.length) {
-              widget.onUndo(direction, widget.mediaItems[currentIndex]);
-            }
-            return true;
-          },
-          onEnd: widget.onFinished,
-          cardBuilder:
-              (context, index, horizontalThreshold, verticalThreshold) {
-                if (index >= widget.mediaItems.length) {
-                  return const SizedBox.shrink();
-                }
-                final isFront = index == _currentIndex;
-
-                final cardWidget = RepaintBoundary(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: MediaCard(
-                      mediaItem: widget.mediaItems[index],
-                      isFrontCard: isFront,
-                    ),
-                  ),
+    return CardSwiper(
+      allowedSwipeDirection: const AllowedSwipeDirection.only(left: true, right: true),
+      controller: _controller,
+      cardsCount: widget.mediaItems.length,
+      numberOfCardsDisplayed: widget.mediaItems.length >= 3 ? 3 : widget.mediaItems.length,
+      padding: const EdgeInsets.only(bottom: 40),
+      backCardOffset: Offset(0, 38),
+      isLoop: false,
+      duration: const Duration(milliseconds: 200),
+      onSwipe: (previousIndex, currentIndex, direction) {
+        if (previousIndex < widget.mediaItems.length) {
+          widget.onSwipe(direction, widget.mediaItems[previousIndex]);
+        }
+        if (currentIndex != null && currentIndex < widget.mediaItems.length) {
+          _currentIndex = currentIndex;
+          widget.onNeedMoreItems(currentIndex);
+        }
+        return true;
+      },
+      onUndo: (previousIndex, currentIndex, direction) {
+        _currentIndex = currentIndex;
+        if (currentIndex < widget.mediaItems.length) {
+          widget.onUndo(direction, widget.mediaItems[currentIndex]);
+        }
+        return true;
+      },
+      onEnd: widget.onFinished,
+      cardBuilder: (context, index, horizontalThreshold, verticalThreshold) {
+        if (index >= widget.mediaItems.length) {
+          return const SizedBox.shrink();
+        }
+        final item = widget.mediaItems[index];
+        return RepaintBoundary(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: ValueListenableBuilder<Set<String>>(
+              valueListenable: widget.favoritedIdsNotifier,
+              builder: (context, favoritedIds, _) {
+                final isFav = favoritedIds.contains(item.asset.id) != item.asset.isFavorite;
+                return MediaCard(
+                  key: ValueKey(item.asset.id),
+                  mediaItem: item,
+                  isFrontCard: index == _currentIndex,
+                  isFavorited: isFav,
+                  onFavorite: () => widget.onToggleFavorite(item),
                 );
-
-                if (!isFront) return cardWidget;
-
-                final zoomableCard = _ZoomableWrapper(
-                  key: ValueKey(widget.mediaItems[index].asset.id),
-                  onZoomChanged: (zoomed) => _isZoomedNotifier.value = zoomed,
-                  child: cardWidget,
-                );
-
-                return zoomableCard;
               },
+            ),
+          ),
         );
       },
     );
@@ -501,15 +494,10 @@ class _Header extends StatelessWidget {
                   ValueListenableBuilder<int>(
                     valueListenable: totalCountNotifier,
                     builder: (context, totalCount, _) {
-                      final text = totalCount > 0
-                          ? '$totalCount arquivos total'
-                          : 'Galeria';
+                      final text = totalCount > 0 ? '$totalCount arquivos total' : 'Galeria';
                       return Text(
                         text,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
-                          fontSize: 14,
-                        ),
+                        style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
                       );
                     },
                   ),
@@ -532,11 +520,8 @@ class _Header extends StatelessWidget {
                   const SizedBox(width: 12),
                   ValueListenableBuilder<int>(
                     valueListenable: keptCountNotifier,
-                    builder: (context, count, _) => _StatBadge(
-                      icon: Icons.favorite,
-                      count: count,
-                      color: _successColor,
-                    ),
+                    builder: (context, count, _) =>
+                        _StatBadge(icon: Icons.favorite, count: count, color: _successColor),
                   ),
                 ],
               ),
@@ -546,33 +531,19 @@ class _Header extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.arrow_back,
-                color: Colors.red.withValues(alpha: 0.7),
-                size: 16,
-              ),
+              Icon(Icons.arrow_back, color: Colors.red.withValues(alpha: 0.7), size: 16),
               const SizedBox(width: 4),
               Text(
                 'Apagar',
-                style: TextStyle(
-                  color: Colors.red.withValues(alpha: 0.7),
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: Colors.red.withValues(alpha: 0.7), fontSize: 12),
               ),
-              const SizedBox(width: 48),
+              const SizedBox(width: 20),
               Text(
                 'Manter',
-                style: TextStyle(
-                  color: Colors.green.withValues(alpha: 0.7),
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: Colors.green.withValues(alpha: 0.7), fontSize: 12),
               ),
               const SizedBox(width: 4),
-              Icon(
-                Icons.arrow_forward,
-                color: Colors.green.withValues(alpha: 0.7),
-                size: 16,
-              ),
+              Icon(Icons.arrow_forward, color: Colors.green.withValues(alpha: 0.7), size: 16),
             ],
           ),
           const SizedBox(height: 8),
@@ -593,10 +564,7 @@ class _LoadingWidget extends StatelessWidget {
         children: [
           const GradientProgressIndicator(),
           const SizedBox(height: 16),
-          const Text(
-            'Carregando arquivos...',
-            style: TextStyle(color: Colors.white70),
-          ),
+          const Text('Carregando arquivos...', style: TextStyle(color: Colors.white70)),
         ],
       ),
     );
@@ -616,10 +584,7 @@ class _ProcessingWidget extends StatelessWidget {
         children: [
           const GradientProgressIndicator(),
           const SizedBox(height: 16),
-          Text(
-            'Apagando $count arquivos...',
-            style: const TextStyle(color: Colors.white70),
-          ),
+          Text('Apagando $count arquivos...', style: const TextStyle(color: Colors.white70)),
         ],
       ),
     );
@@ -648,20 +613,13 @@ class _PermissionError extends StatelessWidget {
             const SizedBox(height: 24),
             const Text(
               'Permissao Necessaria',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             Text(
               errorMessage ?? 'Precisamos de acesso a sua galeria.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.6),
-                fontSize: 16,
-              ),
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 16),
             ),
             const SizedBox(height: 32),
             ElevatedButton.icon(
@@ -671,13 +629,8 @@ class _PermissionError extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: _accentColor,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 16,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30),
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
               ),
             ),
           ],
@@ -708,26 +661,15 @@ class _FinishedScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.celebration,
-              size: 80,
-              color: Colors.white.withValues(alpha: 0.3),
-            ),
+            Icon(Icons.celebration, size: 80, color: Colors.white.withValues(alpha: 0.3)),
             const SizedBox(height: 24),
             const Text(
               'Tudo Limpo!',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             ListenableBuilder(
-              listenable: Listenable.merge([
-                deletedCountNotifier,
-                keptCountNotifier,
-              ]),
+              listenable: Listenable.merge([deletedCountNotifier, keptCountNotifier]),
               builder: (context, _) {
                 final deletedCount = deletedCountNotifier.value;
                 final keptCount = keptCountNotifier.value;
@@ -737,10 +679,7 @@ class _FinishedScreen extends StatelessWidget {
                 return Text(
                   message,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    fontSize: 16,
-                  ),
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 16),
                 );
               },
             ),
@@ -752,13 +691,8 @@ class _FinishedScreen extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: _accentColor,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 16,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30),
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
               ),
             ),
             const SizedBox(height: 16),
@@ -806,202 +740,9 @@ class _StatBadge extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             count.toString(),
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
+            style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ZoomableWrapper extends StatefulWidget {
-  final Widget child;
-  final ValueChanged<bool> onZoomChanged;
-
-  const _ZoomableWrapper({
-    super.key,
-    required this.child,
-    required this.onZoomChanged,
-  });
-
-  @override
-  State<_ZoomableWrapper> createState() => _ZoomableWrapperState();
-}
-
-class _ZoomableWrapperState extends State<_ZoomableWrapper>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _animationController;
-  Animation<Matrix4>? _animation;
-  TapDownDetails? _doubleTapDetails;
-  final _transformNotifier = ValueNotifier<Matrix4>(Matrix4.identity());
-  final _zoomedNotifier = ValueNotifier<bool>(false);
-
-  Matrix4 _transform = Matrix4.identity();
-  double _scale = 1.0;
-  Offset _offset = Offset.zero;
-
-  final _pointers = <int, Offset>{};
-  double? _basePinchDistance;
-  double _basePinchScale = 1.0;
-  Offset _basePinchOffset = Offset.zero;
-  bool _pinching = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 250),
-    )..addListener(_onAnimate);
-  }
-
-  void _applyTransform() {
-    _transform = Matrix4.identity()
-      ..translateByDouble(_offset.dx, _offset.dy, 0, 0)
-      ..scaleByDouble(_scale, _scale, 1, 0);
-    _transformNotifier.value = _transform;
-    final zoomed = _scale > 1.01;
-    if (_zoomedNotifier.value != zoomed) {
-      _zoomedNotifier.value = zoomed;
-      widget.onZoomChanged(zoomed);
-    }
-  }
-
-  void _resetZoom() {
-    _scale = 1.0;
-    _offset = Offset.zero;
-    _applyTransform();
-  }
-
-  void _onAnimate() {
-    if (_animation == null) return;
-    _transform = _animation!.value;
-    _transformNotifier.value = _transform;
-    _scale = _transform.getMaxScaleOnAxis();
-    _offset = Offset(_transform.entry(0, 3), _transform.entry(1, 3));
-    final zoomed = _scale > 1.01;
-    if (_zoomedNotifier.value != zoomed) {
-      _zoomedNotifier.value = zoomed;
-      widget.onZoomChanged(zoomed);
-    }
-  }
-
-  void _handleDoubleTapDown(TapDownDetails details) {
-    _doubleTapDetails = details;
-  }
-
-  void _handleDoubleTap() {
-    final Matrix4 end;
-    if (_scale > 1.01) {
-      end = Matrix4.identity();
-    } else {
-      final position = _doubleTapDetails?.localPosition ?? Offset.zero;
-      const s = 2.5;
-      final tx = position.dx * (1 - s);
-      final ty = position.dy * (1 - s);
-      end = Matrix4(s, 0, 0, 0, 0, s, 0, 0, 0, 0, 1, 0, tx, ty, 0, 1);
-    }
-    _animation = Matrix4Tween(begin: _transform, end: end).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
-    );
-    _animationController.forward(from: 0);
-  }
-
-  void _onPointerDown(PointerDownEvent event) {
-    _pointers[event.pointer] = event.localPosition;
-  }
-
-  void _onPointerMove(PointerMoveEvent event) {
-    final old = _pointers[event.pointer];
-    _pointers[event.pointer] = event.localPosition;
-
-    if (_pointers.length >= 2) {
-      _pinching = true;
-      final pts = _pointers.values.toList();
-      final distance = (pts[0] - pts[1]).distance;
-
-      if (_basePinchDistance == null) {
-        _basePinchDistance = distance;
-        _basePinchScale = _scale;
-        _basePinchOffset = _offset;
-        return;
-      }
-
-      final newScale = (_basePinchScale * distance / _basePinchDistance!).clamp(
-        1.0,
-        4.0,
-      );
-      final focal = (pts[0] + pts[1]) / 2;
-      final scaleDelta = newScale / _basePinchScale;
-      _scale = newScale;
-      _offset = focal - (focal - _basePinchOffset) * scaleDelta;
-      _clampOffset();
-      _applyTransform();
-      return;
-    }
-
-    if (_scale > 1.01 && old != null && !_pinching) {
-      _offset += event.localPosition - old;
-      _clampOffset();
-      _applyTransform();
-    }
-  }
-
-  void _onPointerUpOrCancel(PointerEvent event) {
-    _pointers.remove(event.pointer);
-    if (_pointers.length < 2) {
-      _basePinchDistance = null;
-    }
-    if (_pointers.isEmpty) {
-      _pinching = false;
-      if (_scale <= 1.01) _resetZoom();
-    }
-  }
-
-  void _clampOffset() {
-    if (_scale <= 1.0) {
-      _offset = Offset.zero;
-      return;
-    }
-    final size = context.size;
-    if (size == null) return;
-    final maxX = size.width * (_scale - 1) / 2;
-    final maxY = size.height * (_scale - 1) / 2;
-    _offset = Offset(
-      _offset.dx.clamp(-maxX, maxX),
-      _offset.dy.clamp(-maxY, maxY),
-    );
-  }
-
-  @override
-  void dispose() {
-    _animationController.removeListener(_onAnimate);
-    _animationController.dispose();
-    _transformNotifier.dispose();
-    _zoomedNotifier.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Listener(
-      onPointerDown: _onPointerDown,
-      onPointerMove: _onPointerMove,
-      onPointerUp: _onPointerUpOrCancel,
-      onPointerCancel: _onPointerUpOrCancel,
-      child: GestureDetector(
-        onDoubleTapDown: _handleDoubleTapDown,
-        onDoubleTap: _handleDoubleTap,
-        child: ValueListenableBuilder<Matrix4>(
-          valueListenable: _transformNotifier,
-          builder: (context, transform, child) =>
-              Transform(transform: transform, child: child),
-          child: widget.child,
-        ),
       ),
     );
   }
@@ -1012,22 +753,14 @@ class _DeleteDialog extends StatelessWidget {
   final int estimatedSize;
   final bool isFinal;
 
-  const _DeleteDialog({
-    required this.count,
-    required this.estimatedSize,
-    required this.isFinal,
-  });
+  const _DeleteDialog({required this.count, required this.estimatedSize, required this.isFinal});
 
   @override
   Widget build(BuildContext context) {
     final iconData = isFinal ? Icons.check_circle : Icons.delete_sweep;
     final iconColor = isFinal ? _successColor : _deleteColor;
-    final title = isFinal
-        ? 'Revisao concluida!'
-        : '$count arquivos selecionados';
-    final subtitle = isFinal
-        ? '$count arquivos para apagar'
-        : 'Deseja apagar agora ou continuar?';
+    final title = isFinal ? 'Revisao concluida!' : '$count arquivos selecionados';
+    final subtitle = isFinal ? '$count arquivos para apagar' : 'Deseja apagar agora ou continuar?';
     final cancelLabel = isFinal ? 'Cancelar' : 'Continuar';
 
     return Dialog(
@@ -1058,10 +791,7 @@ class _DeleteDialog extends StatelessWidget {
             const SizedBox(height: 8),
             if (estimatedSize > 0)
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
                   color: _successColor.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(20),
@@ -1073,10 +803,7 @@ class _DeleteDialog extends StatelessWidget {
                     const SizedBox(width: 8),
                     Text(
                       'Economize ~${MediaItem.formatSize(estimatedSize)}',
-                      style: const TextStyle(
-                        color: _successColor,
-                        fontWeight: FontWeight.w600,
-                      ),
+                      style: const TextStyle(color: _successColor, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -1084,10 +811,7 @@ class _DeleteDialog extends StatelessWidget {
             if (!isFinal) const SizedBox(height: 8),
             Text(
               subtitle,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.7),
-                fontSize: 14,
-              ),
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
@@ -1098,13 +822,9 @@ class _DeleteDialog extends StatelessWidget {
                     onPressed: () => Navigator.pop(context, false),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white70,
-                      side: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.3),
-                      ),
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     child: Text(cancelLabel),
                   ),
@@ -1117,9 +837,7 @@ class _DeleteDialog extends StatelessWidget {
                       backgroundColor: _deleteColor,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     child: const Text('Apagar'),
                   ),

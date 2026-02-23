@@ -20,7 +20,7 @@ class MediaItem {
       asset: asset,
       isVideo: asset.type == AssetType.video,
       isLivePhoto: asset.isLivePhoto,
-      title: asset.title ?? 'Sem titulo',
+      title: (asset.title != null && asset.title!.isNotEmpty) ? asset.title! : asset.relativePath ?? 'Sem titulo',
       createDate: asset.createDateTime,
     );
   }

@@ -41,13 +41,10 @@ class _GalleryScreenState extends State<GalleryScreen> {
       return;
     }
 
-    final results = await Future.wait([
-      _mediaService.getAvailableMonths(),
-      _mediaService.getOnThisDay(),
-    ]);
+    final data = await _mediaService.loadGalleryData();
     setState(() {
-      _groups = results[0] as List<DateGroup>;
-      _onThisDayGroups = results[1] as List<OnThisDayGroup>;
+      _groups = data.months;
+      _onThisDayGroups = data.onThisDay;
       _isLoading = false;
     });
   }

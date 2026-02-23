@@ -23,10 +23,10 @@ class LivePhotoPreview extends StatefulWidget {
   });
 
   @override
-  State<LivePhotoPreview> createState() => _LivePhotoPreviewState();
+  LivePhotoPreviewState createState() => LivePhotoPreviewState();
 }
 
-class _LivePhotoPreviewState extends State<LivePhotoPreview> {
+class LivePhotoPreviewState extends State<LivePhotoPreview> {
   final _controllerNotifier = ValueNotifier<VideoPlayerController?>(null);
   final _downloadProgressNotifier = ValueNotifier<double?>(null);
   StreamSubscription<PMProgressState>? _progressSubscription;
