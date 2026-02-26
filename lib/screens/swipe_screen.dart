@@ -11,7 +11,6 @@ import '../widgets/action_buttons.dart';
 import '../widgets/gradient_progress_indicator.dart';
 import '../widgets/media_card.dart';
 
-const _deleteBatchSize = 20;
 const _backgroundColor = Color(0xFF0f0f1a);
 const _accentColor = Color(0xFF6C5CE7);
 const _deleteColor = Color(0xFFFF4757);
@@ -55,7 +54,6 @@ class _SwipeScreenState extends State<SwipeScreen> {
   final List<_SwipeAction> _swipeHistory = [];
   final Map<String, int> _fileSizeCache = {};
   String? _errorMessage;
-  bool _isShowingBatchDialog = false;
 
   GlobalKey<_MediaSwiperState> _swiperKey = GlobalKey();
 
@@ -145,7 +143,6 @@ class _SwipeScreenState extends State<SwipeScreen> {
         _itemsToDelete.add(item);
         _deletedCountNotifier.value++;
         Future.delayed(const Duration(milliseconds: 300), () => _cacheFileSize(item));
-        _checkBatchDelete();
       case CardSwiperDirection.right:
         _keptService.trackKept(item.asset.id);
         _keptCountNotifier.value++;
@@ -162,14 +159,6 @@ class _SwipeScreenState extends State<SwipeScreen> {
     } catch (_) {}
   }
 
-  void _checkBatchDelete() {
-    if (_isShowingBatchDialog) return;
-    if (_itemsToDelete.isEmpty) return;
-    if (_itemsToDelete.length % _deleteBatchSize != 0) return;
-
-    _isShowingBatchDialog = true;
-    _showDeleteDialog(isFinal: false);
-  }
 
   Future<void> _showDeleteDialog({required bool isFinal}) async {
     final result = await showDialog<bool>(
@@ -182,7 +171,6 @@ class _SwipeScreenState extends State<SwipeScreen> {
       ),
     );
 
-    _isShowingBatchDialog = false;
 
     if (result == true) {
       if (isFinal) {
