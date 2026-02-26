@@ -16,6 +16,7 @@ const _backgroundColor = Color(0xFF0f0f1a);
 const _accentColor = Color(0xFF6C5CE7);
 const _deleteColor = Color(0xFFFF4757);
 const _successColor = Color(0xFF2ED573);
+
 class _SwipeAction {
   final MediaItem item;
   final CardSwiperDirection direction;
@@ -46,6 +47,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
   final ValueNotifier<int> _totalCountNotifier = ValueNotifier(0);
   final ValueNotifier<bool> _canUndoNotifier = ValueNotifier(false);
 
+  final ValueNotifier<int> _currentIndexNotifier = ValueNotifier(0);
   final ValueNotifier<Set<String>> _favoritedIdsNotifier = ValueNotifier({});
 
   List<MediaItem> _mediaItems = [];
@@ -72,6 +74,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
     _keptCountNotifier.dispose();
     _totalCountNotifier.dispose();
     _canUndoNotifier.dispose();
+    _currentIndexNotifier.dispose();
     _favoritedIdsNotifier.dispose();
     super.dispose();
   }
@@ -83,6 +86,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
     _deletedCountNotifier.value = 0;
     _keptCountNotifier.value = 0;
     _canUndoNotifier.value = false;
+    _currentIndexNotifier.value = 0;
     _favoritedIdsNotifier.value = {};
     _mediaItems = [];
     _swiperKey = GlobalKey();
@@ -288,6 +292,11 @@ class _SwipeScreenState extends State<SwipeScreen> {
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
+        centerTitle: false,
+        title: Text(
+          _title,
+          style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+        ),
       ),
       body: Column(
         children: [
@@ -295,7 +304,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
             totalCountNotifier: _totalCountNotifier,
             deletedCountNotifier: _deletedCountNotifier,
             keptCountNotifier: _keptCountNotifier,
-            title: _title,
+            currentIndexNotifier: _currentIndexNotifier,
             onDeleteTap: _onDeleteBadgeTap,
           ),
           Expanded(
@@ -322,6 +331,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
                       key: _swiperKey,
                       mediaItems: _mediaItems,
                       favoritedIdsNotifier: _favoritedIdsNotifier,
+                      currentIndexNotifier: _currentIndexNotifier,
                       onToggleFavorite: _onToggleFavorite,
                       onSwipe: _onSwipe,
                       onUndo: _onUndo,
@@ -364,6 +374,7 @@ class _SwipeScreenState extends State<SwipeScreen> {
 class _MediaSwiper extends StatefulWidget {
   final List<MediaItem> mediaItems;
   final ValueNotifier<Set<String>> favoritedIdsNotifier;
+  final ValueNotifier<int> currentIndexNotifier;
   final void Function(MediaItem item) onToggleFavorite;
   final void Function(CardSwiperDirection direction, MediaItem item) onSwipe;
   final void Function(CardSwiperDirection direction, MediaItem item) onUndo;
@@ -374,6 +385,7 @@ class _MediaSwiper extends StatefulWidget {
     super.key,
     required this.mediaItems,
     required this.favoritedIdsNotifier,
+    required this.currentIndexNotifier,
     required this.onToggleFavorite,
     required this.onSwipe,
     required this.onUndo,
@@ -416,12 +428,14 @@ class _MediaSwiperState extends State<_MediaSwiper> {
         }
         if (currentIndex != null && currentIndex < widget.mediaItems.length) {
           _currentIndex = currentIndex;
+          widget.currentIndexNotifier.value = currentIndex;
           widget.onNeedMoreItems(currentIndex);
         }
         return true;
       },
       onUndo: (previousIndex, currentIndex, direction) {
         _currentIndex = currentIndex;
+        widget.currentIndexNotifier.value = currentIndex;
         if (currentIndex < widget.mediaItems.length) {
           widget.onUndo(direction, widget.mediaItems[currentIndex]);
         }
@@ -460,14 +474,14 @@ class _Header extends StatelessWidget {
   final ValueNotifier<int> totalCountNotifier;
   final ValueNotifier<int> deletedCountNotifier;
   final ValueNotifier<int> keptCountNotifier;
-  final String title;
   final VoidCallback? onDeleteTap;
+  final ValueNotifier<int>? currentIndexNotifier;
 
   const _Header({
     required this.totalCountNotifier,
     required this.deletedCountNotifier,
     required this.keptCountNotifier,
-    required this.title,
+    this.currentIndexNotifier,
     this.onDeleteTap,
   });
 
@@ -480,28 +494,24 @@ class _Header extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  ValueListenableBuilder<int>(
-                    valueListenable: totalCountNotifier,
-                    builder: (context, totalCount, _) {
-                      final text = totalCount > 0 ? '$totalCount arquivos total' : 'Galeria';
-                      return Text(
-                        text,
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
-                      );
-                    },
-                  ),
-                ],
+              ListenableBuilder(
+                listenable: Listenable.merge([
+                  totalCountNotifier,
+                  if (currentIndexNotifier != null) currentIndexNotifier!,
+                ]),
+                builder: (context, _) {
+                  final totalCount = totalCountNotifier.value;
+                  final current = currentIndexNotifier?.value;
+                  final text = totalCount > 0 && current != null
+                      ? '${current + 1} de $totalCount'
+                      : totalCount > 0
+                          ? '$totalCount arquivos'
+                          : 'Galeria';
+                  return Text(
+                    text,
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
+                  );
+                },
               ),
               Row(
                 children: [
@@ -528,6 +538,12 @@ class _Header extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
+          _SwipeProgressBar(
+            deletedCountNotifier: deletedCountNotifier,
+            keptCountNotifier: keptCountNotifier,
+            totalCountNotifier: totalCountNotifier,
+          ),
+          const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -549,6 +565,119 @@ class _Header extends StatelessWidget {
           const SizedBox(height: 8),
         ],
       ),
+    );
+  }
+}
+
+class _SwipeProgressBar extends StatefulWidget {
+  final ValueNotifier<int> deletedCountNotifier;
+  final ValueNotifier<int> keptCountNotifier;
+  final ValueNotifier<int> totalCountNotifier;
+
+  const _SwipeProgressBar({
+    required this.deletedCountNotifier,
+    required this.keptCountNotifier,
+    required this.totalCountNotifier,
+  });
+
+  @override
+  State<_SwipeProgressBar> createState() => _SwipeProgressBarState();
+}
+
+class _SwipeProgressBarState extends State<_SwipeProgressBar> with SingleTickerProviderStateMixin {
+  late final AnimationController _animController;
+  late Animation<double> _deletedAnimation;
+  late Animation<double> _keptAnimation;
+  double _currentDeleted = 0.0;
+  double _currentKept = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(vsync: this, duration: const Duration(milliseconds: 300));
+    _deletedAnimation = AlwaysStoppedAnimation(0.0);
+    _keptAnimation = AlwaysStoppedAnimation(0.0);
+    widget.deletedCountNotifier.addListener(_onChanged);
+    widget.keptCountNotifier.addListener(_onChanged);
+    widget.totalCountNotifier.addListener(_onChanged);
+  }
+
+  void _onChanged() {
+    final total = widget.totalCountNotifier.value;
+    if (total <= 0) return;
+
+    final newDeleted = widget.deletedCountNotifier.value / total;
+    final newKept = widget.keptCountNotifier.value / total;
+
+    _deletedAnimation = Tween<double>(
+      begin: _currentDeleted,
+      end: newDeleted,
+    ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic));
+
+    _keptAnimation = Tween<double>(
+      begin: _currentKept,
+      end: newKept,
+    ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic));
+
+    _currentDeleted = newDeleted;
+    _currentKept = newKept;
+    _animController.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    widget.deletedCountNotifier.removeListener(_onChanged);
+    widget.keptCountNotifier.removeListener(_onChanged);
+    widget.totalCountNotifier.removeListener(_onChanged);
+    _animController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animController,
+      builder: (context, _) {
+        final deleted = _deletedAnimation.value.clamp(0.0, 1.0);
+        final kept = _keptAnimation.value.clamp(0.0, 1.0);
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: SizedBox(
+            height: 3,
+            child: Container(
+              color: Colors.white.withValues(alpha: 0.08),
+              child: Row(
+                children: [
+                  if (deleted > 0)
+                    Flexible(
+                      flex: (deleted * 1000).round(),
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(colors: [Color(0xFFFF6B81), Color(0xFFFF4757)]),
+                        ),
+                      ),
+                    ),
+                  if (kept > 0)
+                    Flexible(
+                      flex: (kept * 1000).round(),
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(colors: [Color(0xFF7BED9F), Color(0xFF2ED573)]),
+                        ),
+                      ),
+                    ),
+                  if ((1 - deleted - kept) > 0.001)
+                    Flexible(
+                      flex: ((1 - deleted - kept) * 1000).round(),
+                      child: const SizedBox.shrink(),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

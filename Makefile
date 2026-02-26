@@ -1,6 +1,6 @@
 .PHONY: deploy deploy-ios deploy-android build-ios build-android
 
-deploy: deploy-ios deploy-android
+deploy_all: deploy-ios deploy-android
 	@echo "Deploy completo para iOS e Android!"
 
 deploy-ios:

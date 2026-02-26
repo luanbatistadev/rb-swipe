@@ -350,24 +350,26 @@ class _MediaCardState extends State<MediaCard> {
                 return const ThumbnailPlaceholder();
               },
             ),
-            if (widget.onFavorite != null)
-              Positioned(
-                top: 12,
-                left: 12,
-                child: _CircleButton(
-                  icon: widget.isFavorited ? Icons.star : Icons.star_outline,
-                  onTap: widget.onFavorite!,
-                  color: widget.isFavorited ? const Color(0xFFFFA502) : Colors.white,
-                  size: 24,
-                ),
-              ),
             Positioned(
               bottom: 12,
               right: 12,
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _CircleButton(icon: Icons.info_outline, onTap: _showInfoSheet),
-                  const SizedBox(width: 10),
+                  if (widget.onFavorite != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _CircleButton(
+                        icon: widget.isFavorited ? Icons.star : Icons.star_outline,
+                        onTap: widget.onFavorite!,
+                        color: widget.isFavorited ? const Color(0xFFFFA502) : Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _CircleButton(icon: Icons.info_outline, onTap: _showInfoSheet),
+                  ),
                   ValueListenableBuilder<bool>(
                     valueListenable: _isSharingNotifier,
                     builder: (context, isSharing, _) {
