@@ -28,7 +28,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     super.initState();
     FlutterNativeSplash.remove();
 
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400));
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600));
 
     _entryOpacity = Tween(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _controller, curve: const Interval(0.0, 0.18, curve: Curves.easeOut)),

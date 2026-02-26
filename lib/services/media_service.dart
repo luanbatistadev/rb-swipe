@@ -57,14 +57,34 @@ class OnThisDayGroup {
 }
 
 class MediaService {
+  static final MediaService _instance = MediaService._internal();
+  factory MediaService() => _instance;
+  MediaService._internal();
+
   final KeptMediaService _keptService = KeptMediaService();
+
+  ({List<DateGroup> months, List<OnThisDayGroup> onThisDay})? _cachedGalleryData;
+  Future<({List<DateGroup> months, List<OnThisDayGroup> onThisDay})>? _loadingFuture;
+
+  ({List<DateGroup> months, List<OnThisDayGroup> onThisDay})? get cachedGalleryData =>
+      _cachedGalleryData;
+
+  void invalidateCache() {
+    _cachedGalleryData = null;
+    _loadingFuture = null;
+  }
 
   Future<bool> requestPermission() async {
     final permission = await PhotoManager.requestPermissionExtend();
     return permission.isAuth;
   }
 
-  Future<({List<DateGroup> months, List<OnThisDayGroup> onThisDay})> loadGalleryData() async {
+  Future<({List<DateGroup> months, List<OnThisDayGroup> onThisDay})> loadGalleryData() {
+    _loadingFuture ??= _doLoadGalleryData().whenComplete(() => _loadingFuture = null);
+    return _loadingFuture!;
+  }
+
+  Future<({List<DateGroup> months, List<OnThisDayGroup> onThisDay})> _doLoadGalleryData() async {
     final albums = await PhotoManager.getAssetPathList(type: RequestType.common, hasAll: true);
     if (albums.isEmpty) return (months: <DateGroup>[], onThisDay: <OnThisDayGroup>[]);
 
@@ -116,7 +136,9 @@ class MediaService {
         .toList()
       ..sort((a, b) => b.year.compareTo(a.year));
 
-    return (months: months, onThisDay: onThisDay);
+    final result = (months: months, onThisDay: onThisDay);
+    _cachedGalleryData = result;
+    return result;
   }
 
   Future<List<MediaItem>> loadMediaByDayAndYear({
@@ -125,41 +147,28 @@ class MediaService {
     required int year,
     required AssetPathEntity album,
   }) async {
-    final filter = FilterOptionGroup(
-      createTimeCond: DateTimeCond(
-        min: DateTime(year, month, day),
-        max: DateTime(year, month, day, 23, 59, 59),
-      ),
-      orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+    return _loadMediaWithFilter(
+      min: DateTime(year, month, day),
+      max: DateTime(year, month, day, 23, 59, 59),
     );
-
-    final albums = await PhotoManager.getAssetPathList(
-      type: RequestType.common,
-      hasAll: true,
-      filterOption: filter,
-    );
-
-    if (albums.isEmpty) return [];
-
-    final allPhotos = albums.first;
-    final count = await allPhotos.assetCountAsync;
-    final assets = await allPhotos.getAssetListRange(start: 0, end: count);
-
-    return assets
-        .where((e) => !_keptService.isKept(e.id))
-        .map(MediaItem.fromAsset)
-        .toList();
   }
 
   Future<List<MediaItem>> loadMediaByDate({
     required DateTime date,
     required AssetPathEntity album,
   }) async {
+    return _loadMediaWithFilter(
+      min: DateTime(date.year, date.month),
+      max: DateTime(date.year, date.month + 1, 0, 23, 59, 59),
+    );
+  }
+
+  Future<List<MediaItem>> _loadMediaWithFilter({
+    required DateTime min,
+    required DateTime max,
+  }) async {
     final filter = FilterOptionGroup(
-      createTimeCond: DateTimeCond(
-        min: DateTime(date.year, date.month),
-        max: DateTime(date.year, date.month + 1, 0, 23, 59, 59),
-      ),
+      createTimeCond: DateTimeCond(min: min, max: max),
       orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
     );
 

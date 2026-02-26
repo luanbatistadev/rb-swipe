@@ -32,8 +32,9 @@ class _GalleryScreenState extends State<GalleryScreen> {
     _loadGroups();
   }
 
-  Future<void> _loadGroups() async {
+  Future<void> _loadGroups({bool invalidate = false}) async {
     final hasPermission = await _mediaService.requestPermission();
+    if (!mounted) return;
     setState(() => _hasPermission = hasPermission);
 
     if (!hasPermission) {
@@ -41,7 +42,21 @@ class _GalleryScreenState extends State<GalleryScreen> {
       return;
     }
 
+    if (invalidate) {
+      _mediaService.invalidateCache();
+    }
+
+    final cached = _mediaService.cachedGalleryData;
+    if (cached != null) {
+      setState(() {
+        _groups = cached.months;
+        _onThisDayGroups = cached.onThisDay;
+        _isLoading = false;
+      });
+    }
+
     final data = await _mediaService.loadGalleryData();
+    if (!mounted) return;
     setState(() {
       _groups = data.months;
       _onThisDayGroups = data.onThisDay;
@@ -52,8 +67,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
   Future<void> _navigateAndReload(Widget screen) async {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
     if (!mounted) return;
-    setState(() => _isLoading = true);
-    _loadGroups();
+    _loadGroups(invalidate: true);
   }
 
   @override

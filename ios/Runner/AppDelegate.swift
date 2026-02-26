@@ -19,4 +19,15 @@ import flutter_local_notifications
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
+
+  override func application(
+    _ application: UIApplication,
+    configurationForConnecting connectingSceneSession: UISceneSession,
+    options: UIScene.ConnectionOptions
+  ) -> UISceneConfiguration {
+    let config = UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
+    config.delegateClass = SceneDelegate.self
+    config.storyboard = UIStoryboard(name: "Main", bundle: nil)
+    return config
+  }
 }
